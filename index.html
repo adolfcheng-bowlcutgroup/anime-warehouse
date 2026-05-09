@@ -54,6 +54,9 @@ td{padding:9px 12px;border-bottom:0.5px solid #f0f0ea;vertical-align:middle}
 tr:last-child td{border-bottom:none}
 tr:hover td{background:#fafaf8}
 .tbl-wrap{border:0.5px solid #e8e8e0;border-radius:12px;overflow:hidden;overflow-x:auto}
+.tbl-scroll{max-height:320px;overflow-y:auto}
+.tbl-scroll table thead th{position:sticky;top:0;z-index:1}
+.cart-summary{font-size:12px;color:#666;margin-left:auto}
 
 /* Tags */
 .tag{display:inline-block;font-size:11px;padding:2px 9px;border-radius:999px;font-weight:500}
@@ -197,6 +200,7 @@ const db = getFirestore(app);
 let products = [];
 let logs = [];
 let currentTab = 'dashboard';
+let shippingCart = [];
 let unsubProducts = null;
 let unsubLogs = null;
 
@@ -283,12 +287,19 @@ function renderDashboard(){
     alertHtml=`<div class="alert-banner">⚠️ <div>低庫存警示：${items}</div></div>`;
   }
 
-  const recent = logs.slice(0,8);
+  const recent = logs.slice(0,30);
   const rows = recent.length===0
-    ? `<tr><td colspan="5" class="empty">尚無記錄</td></tr>`
+    ? `<tr><td colspan="6" class="empty">尚無記錄</td></tr>`
     : recent.map(l=>{
         const p=products.find(x=>x.id===l.productId);
-        return `<tr><td>${l.date}</td><td>${p?esc(p.name):'<span style="color:#aaa">已刪除</span>'}</td><td><span class="tag ${l.type==='in'?'tag-in':'tag-out'}">${l.type==='in'?'進貨':'出貨'}</span></td><td>${l.qty}</td><td style="color:#888">${esc(l.note||'—')}</td></tr>`;
+        return `<tr>
+          <td>${l.date}</td>
+          <td>${p?esc(p.name):'<span style="color:#aaa">已刪除</span>'}</td>
+          <td><span class="tag ${l.type==='in'?'tag-in':'tag-out'}">${l.type==='in'?'進貨':'出貨'}</span></td>
+          <td>${l.qty}</td>
+          <td style="color:#888">${esc(l.note||'—')}</td>
+          <td><button class="btn sm danger" onclick="delLog('${l.id}')">🗑️ 刪除</button></td>
+        </tr>`;
       }).join('');
 
   return `
@@ -302,8 +313,8 @@ function renderDashboard(){
     ${alertHtml}
     <div class="card">
       <div class="card-title">📋 最近進出貨記錄</div>
-      <div class="tbl-wrap">
-        <table><thead><tr><th>日期</th><th>商品</th><th>類型</th><th>數量</th><th>備註</th></tr></thead>
+      <div class="tbl-wrap tbl-scroll">
+        <table><thead><tr><th>日期</th><th>商品</th><th>類型</th><th>數量</th><th>備註</th><th>操作</th></tr></thead>
         <tbody>${rows}</tbody></table>
       </div>
     </div>`;
@@ -375,22 +386,26 @@ function renderOut(){
   const opts = active.length===0
     ? '<option disabled>請先新增商品</option>'
     : active.map(p=>`<option value="${p.id}">${esc(p.name)}（庫存：${p.stock}）</option>`).join('');
-  const recent = logs.filter(l=>l.type==='out').slice(0,5);
+  const recent = logs.filter(l=>l.type==='out').slice(0,20);
   return `
-    <div class="card" style="max-width:440px">
+    <div class="card" style="max-width:640px">
       <div class="card-title">📤 新增出貨</div>
       <div class="form-row"><label>商品</label><select id="out-p">${opts}</select></div>
       <div class="form-row"><label>出貨數量</label><input type="number" id="out-q" min="1" value="1"></div>
       <div class="form-row"><label>活動 / 收貨方 / 備註</label><input type="text" id="out-n" placeholder="例：台北場快閃"></div>
       <div class="form-row"><label>日期</label><input type="date" id="out-d" value="${today()}"></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn primary" onclick="submitOut(false)">✔ 確認出貨</button>
-        <button class="btn success" onclick="submitOut(true)">🖨️ 確認出貨並列印出貨單</button>
+        <button class="btn primary" onclick="addOutCart()">＋ 加入出貨清單</button>
+        <button class="btn success" onclick="confirmOutCartAndPrint()">🖨️ 確認出貨並列印出貨單</button>
       </div>
+    </div>
+    <div class="card">
+      <div class="card-title">🧾 目前出貨清單 <span class="cart-summary">共 ${shippingCart.length} 項</span></div>
+      ${shippingCartTable()}
     </div>
     <div class="card" style="margin-top:12px">
       <div class="card-title">最近出貨記錄</div>
-      ${miniLogTable(recent)}
+      <div class="tbl-wrap tbl-scroll">${miniLogTable(recent)}</div>
     </div>`;
 }
 
@@ -402,7 +417,7 @@ function renderLogs(){
   if(dateF) list=list.filter(l=>l.date===dateF);
 
   const rows = list.length===0
-    ? `<tr><td colspan="6" class="empty">無符合記錄</td></tr>`
+    ? `<tr><td colspan="7" class="empty">無符合記錄</td></tr>`
     : list.map(l=>{
         const p=products.find(x=>x.id===l.productId);
         return `<tr>
@@ -412,6 +427,7 @@ function renderLogs(){
           <td><span class="tag ${l.type==='in'?'tag-in':'tag-out'}">${l.type==='in'?'進貨':'出貨'}</span></td>
           <td>${l.qty}</td>
           <td style="color:#888">${esc(l.note||'—')}</td>
+          <td><button class="btn sm danger" onclick="delLog('${l.id}')">🗑️ 刪除</button></td>
         </tr>`;
       }).join('');
 
@@ -427,7 +443,7 @@ function renderLogs(){
       <button class="btn success" onclick="printFiltered()">🖨️ 列印出貨單</button>
     </div>
     <div class="tbl-wrap">
-      <table><thead><tr><th>日期</th><th>編號</th><th>商品</th><th>類型</th><th>數量</th><th>備註</th></tr></thead>
+      <table><thead><tr><th>日期</th><th>編號</th><th>商品</th><th>類型</th><th>數量</th><th>備註</th><th>操作</th></tr></thead>
       <tbody>${rows}</tbody></table>
     </div>`;
 }
@@ -438,6 +454,24 @@ function miniLogTable(list){
     <tbody>${list.map(l=>{const p=products.find(x=>x.id===l.productId);
       return `<tr><td>${l.date}</td><td>${p?esc(p.name):'—'}</td><td>${l.qty}</td><td style="color:#888">${esc(l.note||'—')}</td></tr>`;
     }).join('')}</tbody></table>`;
+}
+
+function shippingCartTable(){
+  if(shippingCart.length===0) return '<p style="font-size:13px;color:#aaa;padding:4px 0">尚未加入任何出貨商品</p>';
+  return `<div class="tbl-wrap tbl-scroll">
+    <table><thead><tr><th>日期</th><th>SKU</th><th>商品</th><th>數量</th><th>備註 / 活動</th><th>操作</th></tr></thead>
+    <tbody>${shippingCart.map((item,i)=>{
+      const p=products.find(x=>x.id===item.productId);
+      return `<tr>
+        <td>${item.date}</td>
+        <td style="color:#888;font-size:12px">${esc(p?.sku||'')}</td>
+        <td>${p?esc(p.name):'<span style="color:#aaa">已刪除</span>'}</td>
+        <td>${item.qty}</td>
+        <td style="color:#888">${esc(item.note||'—')}</td>
+        <td><button class="btn sm danger" onclick="removeOutCart(${i})">🗑️ 移除</button></td>
+      </tr>`;
+    }).join('')}</tbody></table>
+  </div>`;
 }
 
 // ── Product CRUD ──
@@ -508,20 +542,72 @@ window.submitIn = async()=>{
   }catch(e){toast('錯誤：'+e.message);}
 };
 
-window.submitOut = async(print=false)=>{
+window.addOutCart = ()=>{
   const pid=g('out-p'), qty=parseInt(g('out-q'))||0, note=g('out-n'), date=g('out-d')||today();
   if(!pid||qty<=0){toast('請選擇商品並填入有效數量');return;}
   const p=products.find(x=>x.id===pid); if(!p) return;
-  if(p.stock<qty){toast(`⚠️ 庫存不足！目前庫存：${p.stock}`);return;}
+  const cartQty = shippingCart.filter(i=>i.productId===pid).reduce((a,i)=>a+i.qty,0);
+  if(p.stock < cartQty + qty){
+    toast(`⚠️ 出貨清單數量超過庫存！目前庫存：${p.stock}，清單已加入：${cartQty}`);
+    return;
+  }
+  shippingCart.push({productId:pid, qty, note, date});
+  renderContent();
+  toast(`✅ 已加入出貨清單：${p.name} x ${qty}`);
+};
+
+window.removeOutCart = index=>{
+  shippingCart.splice(index,1);
+  renderContent();
+  toast('已從出貨清單移除');
+};
+
+window.confirmOutCartAndPrint = async()=>{
+  if(shippingCart.length===0){toast('請先加入出貨清單');return;}
+  const qtyByProduct = {};
+  for(const item of shippingCart){
+    qtyByProduct[item.productId]=(qtyByProduct[item.productId]||0)+item.qty;
+  }
+  for(const [pid,qty] of Object.entries(qtyByProduct)){
+    const p=products.find(x=>x.id===pid);
+    if(!p){toast('出貨清單中有商品已不存在，請移除後再試');return;}
+    if(p.stock<qty){toast(`⚠️ ${p.name} 庫存不足！目前庫存：${p.stock}，清單需求：${qty}`);return;}
+  }
+  const cartSnapshot = shippingCart.map(i=>({...i}));
   try{
-    await updateDoc(doc(db,'products',pid),{stock:p.stock-qty});
-    const ref = await addDoc(collection(db,'logs'),{productId:pid, type:'out', qty, note, date, createdAt:serverTimestamp()});
-    if(print){
-      const logEntry={id:ref.id, productId:pid, type:'out', qty, note, date};
-      printSlip([logEntry]);
-    } else {
-      toast(`✅ 出貨成功！${p.name} 現庫存：${p.stock-qty}`);
+    for(const [pid,qty] of Object.entries(qtyByProduct)){
+      const p=products.find(x=>x.id===pid);
+      await updateDoc(doc(db,'products',pid),{stock:p.stock-qty});
     }
+    const printedLogs = [];
+    for(const item of cartSnapshot){
+      const ref = await addDoc(collection(db,'logs'),{
+        productId:item.productId, type:'out', qty:item.qty, note:item.note, date:item.date, createdAt:serverTimestamp()
+      });
+      printedLogs.push({id:ref.id, productId:item.productId, type:'out', qty:item.qty, note:item.note, date:item.date});
+    }
+    shippingCart = [];
+    renderContent();
+    printSlip(printedLogs);
+    toast('✅ 出貨完成，已開啟出貨單列印畫面');
+  }catch(e){toast('錯誤：'+e.message);}
+};
+
+window.delLog = async id=>{
+  const l=logs.find(x=>x.id===id); if(!l) return;
+  const p=products.find(x=>x.id===l.productId);
+  const productName = p ? p.name : '已刪除商品';
+  const actionText = p
+    ? (l.type==='in' ? `並將「${productName}」庫存扣回 ${l.qty}` : `並將「${productName}」庫存加回 ${l.qty}`)
+    : '；商品已刪除，因此只會刪除紀錄';
+  if(!confirm(`確定刪除此筆${l.type==='in'?'進貨':'出貨'}記錄？\n${actionText}。`)) return;
+  try{
+    if(p){
+      const nextStock = l.type==='in' ? Math.max(0,(p.stock||0)-l.qty) : (p.stock||0)+l.qty;
+      await updateDoc(doc(db,'products',l.productId),{stock:nextStock});
+    }
+    await deleteDoc(doc(db,'logs',id));
+    toast('已刪除記錄');
   }catch(e){toast('錯誤：'+e.message);}
 };
 
