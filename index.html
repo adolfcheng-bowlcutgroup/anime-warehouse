@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>動漫周邊倉庫管理系統</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Noto Sans TC',system-ui,sans-serif;font-size:14px;background:#f5f5f0;color:#1a1a1a;min-height:100vh}
+a{color:inherit;text-decoration:none}
+
+/* Login */
+#login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;background:#f5f5f0}
+.login-card{background:#fff;border:0.5px solid #e0e0d8;border-radius:16px;padding:40px 36px;text-align:center;width:340px;box-shadow:0 4px 24px rgba(0,0,0,0.06)}
+.login-card .logo{font-size:32px;margin-bottom:12px}
+.login-card h1{font-size:18px;font-weight:600;margin-bottom:6px}
+.login-card p{font-size:13px;color:#888;margin-bottom:24px;line-height:1.6}
+.btn-google{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:11px 16px;border:0.5px solid #ddd;border-radius:8px;background:#fff;font-size:14px;font-weight:500;cursor:pointer;transition:background 0.15s}
+.btn-google:hover{background:#f8f8f8}
+.btn-google img{width:18px;height:18px}
+
+/* App Layout */
+#app-screen{display:none;flex-direction:column;min-height:100vh}
+.topbar{display:flex;align-items:center;gap:12px;padding:0 20px;height:52px;background:#fff;border-bottom:0.5px solid #e8e8e0;position:sticky;top:0;z-index:50}
+.topbar .logo-text{font-size:15px;font-weight:600;flex:1}
+.topbar .user-info{display:flex;align-items:center;gap:8px;font-size:13px;color:#666}
+.topbar .user-info img{width:28px;height:28px;border-radius:50%;border:0.5px solid #e0e0d8}
+.btn-signout{font-size:12px;padding:4px 10px;border:0.5px solid #ddd;border-radius:6px;background:#fff;cursor:pointer;color:#666}
+.btn-signout:hover{background:#f5f5f0}
+.alert-pill{background:#fde8e8;color:#b91c1c;font-size:11px;padding:2px 10px;border-radius:999px;font-weight:500;white-space:nowrap}
+
+.nav{display:flex;gap:2px;padding:8px 16px;background:#fff;border-bottom:0.5px solid #e8e8e0;overflow-x:auto}
+.nav button{font-size:13px;padding:6px 14px;border:none;border-radius:8px;background:transparent;color:#666;cursor:pointer;display:flex;align-items:center;gap:6px;white-space:nowrap;font-family:inherit}
+.nav button.active{background:#1a1a1a;color:#fff;font-weight:500}
+.nav button:hover:not(.active){background:#f0f0ea}
+
+.content{flex:1;padding:20px;max-width:1000px;width:100%;margin:0 auto}
+
+/* Stats */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:18px}
+.stat-card{background:#fff;border:0.5px solid #e8e8e0;border-radius:10px;padding:14px 16px}
+.stat-card .label{font-size:12px;color:#888;margin-bottom:6px}
+.stat-card .value{font-size:24px;font-weight:600}
+.stat-card.danger .value{color:#b91c1c}
+.stat-card.blue .value{color:#1d4ed8}
+.stat-card.amber .value{color:#92400e}
+
+/* Cards & Tables */
+.card{background:#fff;border:0.5px solid #e8e8e0;border-radius:12px;padding:16px 18px;margin-bottom:14px}
+.card-title{font-size:14px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:6px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:9px 12px;border-bottom:0.5px solid #e8e8e0;color:#666;font-weight:500;white-space:nowrap;background:#fafaf8}
+td{padding:9px 12px;border-bottom:0.5px solid #f0f0ea;vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#fafaf8}
+.tbl-wrap{border:0.5px solid #e8e8e0;border-radius:12px;overflow:hidden;overflow-x:auto}
+
+/* Tags */
+.tag{display:inline-block;font-size:11px;padding:2px 9px;border-radius:999px;font-weight:500}
+.tag-low{background:#fde8e8;color:#b91c1c}
+.tag-ok{background:#dcfce7;color:#166534}
+.tag-in{background:#dbeafe;color:#1e40af}
+.tag-out{background:#fef3c7;color:#92400e}
+.tag-gray{background:#f0f0ea;color:#555}
+
+/* Buttons */
+.btn{font-size:13px;padding:7px 14px;border:0.5px solid #d0d0c8;border-radius:8px;background:#fff;color:#1a1a1a;cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-family:inherit;transition:background 0.12s}
+.btn:hover{background:#f5f5f0}
+.btn:active{transform:scale(0.98)}
+.btn.primary{background:#1a1a1a;color:#fff;border-color:#1a1a1a}
+.btn.primary:hover{background:#333}
+.btn.success{background:#15803d;color:#fff;border-color:#15803d}
+.btn.success:hover{background:#166534}
+.btn.danger{color:#b91c1c;border-color:#fca5a5}
+.btn.danger:hover{background:#fde8e8}
+.btn.sm{font-size:12px;padding:4px 10px}
+
+/* Toolbar */
+.toolbar{display:flex;gap:8px;margin-bottom:14px;align-items:center;flex-wrap:wrap}
+.toolbar input[type=text],.toolbar input[type=date],.toolbar select{font-size:13px;padding:6px 10px;border:0.5px solid #d0d0c8;border-radius:8px;background:#fff;font-family:inherit;color:#1a1a1a;outline:none}
+.toolbar input[type=text]:focus,.toolbar select:focus{border-color:#888}
+
+/* Forms */
+.form-row{margin-bottom:12px}
+.form-row label{display:block;font-size:12px;color:#666;margin-bottom:4px;font-weight:500}
+.form-row input,.form-row select,.form-row textarea{width:100%;font-size:13px;padding:8px 10px;border:0.5px solid #d0d0c8;border-radius:8px;background:#fff;font-family:inherit;color:#1a1a1a;outline:none}
+.form-row input:focus,.form-row select:focus,.form-row textarea:focus{border-color:#1a1a1a}
+.form-row textarea{height:70px;resize:vertical}
+.form-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;padding-top:14px;border-top:0.5px solid #f0f0ea}
+
+/* Modal */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:200;padding:16px}
+.modal{background:#fff;border-radius:14px;padding:22px;width:100%;max-width:380px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.12)}
+.modal h2{font-size:16px;font-weight:600;margin-bottom:16px}
+
+/* Alert Banner */
+.alert-banner{background:#fde8e8;border:0.5px solid #fca5a5;border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;color:#b91c1c;display:flex;align-items:flex-start;gap:8px;line-height:1.6}
+
+/* Toast */
+#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1a1a1a;color:#fff;padding:9px 20px;border-radius:999px;font-size:13px;z-index:999;opacity:0;transition:opacity 0.25s;pointer-events:none;white-space:nowrap}
+
+/* Loading */
+#loading{position:fixed;inset:0;background:#f5f5f0;display:flex;align-items:center;justify-content:center;z-index:999;font-size:14px;color:#888}
+
+/* Empty state */
+.empty{text-align:center;padding:36px 20px;color:#aaa;font-size:13px}
+
+/* Print */
+@media print{
+  body{background:#fff}
+  #loading,#toast,.topbar,.nav,.no-print,#login-screen{display:none!important}
+  #app-screen{display:block!important}
+  .content{padding:0;max-width:none}
+  #print-area{display:block!important}
+  .print-hide{display:none!important}
+}
+#print-area{display:none;padding:24px;font-size:13px}
+#print-area h2{font-size:20px;font-weight:700;margin-bottom:4px}
+#print-area .meta{font-size:12px;color:#555;margin-bottom:20px;line-height:1.8}
+#print-area table{width:100%;border-collapse:collapse}
+#print-area th,#print-area td{border:1px solid #ccc;padding:8px 12px;text-align:left}
+#print-area th{background:#f5f5f5;font-weight:600}
+#print-area .sign{margin-top:48px;display:flex;gap:60px;font-size:12px;color:#555}
+#print-area .sign div{border-top:1px solid #aaa;padding-top:6px;min-width:160px}
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<div id="loading">⏳ 載入中…</div>
+
+<!-- Login -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="logo">📦</div>
+    <h1>動漫周邊倉庫管理系統</h1>
+    <p>請使用公司 Google 帳號登入<br>以存取倉庫資料</p>
+    <button class="btn-google" onclick="signIn()">
+      <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google">
+      使用 Google 帳號登入
+    </button>
+  </div>
+</div>
+
+<!-- App -->
+<div id="app-screen">
+  <div class="topbar no-print">
+    <span style="font-size:20px">📦</span>
+    <span class="logo-text">動漫周邊倉庫管理系統</span>
+    <span class="alert-pill" id="alert-pill" style="display:none"></span>
+    <div class="user-info">
+      <img id="user-photo" src="" alt="">
+      <span id="user-name"></span>
+      <button class="btn-signout" onclick="signOut()">登出</button>
+    </div>
+  </div>
+  <div class="nav no-print" id="main-nav">
+    <button class="active" data-tab="dashboard" onclick="switchTab('dashboard')">📊 總覽</button>
+    <button data-tab="products" onclick="switchTab('products')">📦 商品管理</button>
+    <button data-tab="in" onclick="switchTab('in')">🚚 進貨</button>
+    <button data-tab="out" onclick="switchTab('out')">📤 出貨</button>
+    <button data-tab="logs" onclick="switchTab('logs')">📋 記錄</button>
+  </div>
+  <div class="content print-hide" id="main-content">
+    <div class="empty">載入資料中…</div>
+  </div>
+</div>
+
+<!-- Print Area -->
+<div id="print-area"></div>
+<div id="toast"></div>
+<div id="modal-root"></div>
+
+<!-- Firebase -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut as fbSignOut, onAuthStateChanged }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, collection, doc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, serverTimestamp }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyB45D_TxHktIGIVuv0CYboOC2X2MMEZI-k",
+  authDomain: "anime-warehouse-3e399.firebaseapp.com",
+  projectId: "anime-warehouse-3e399",
+  storageBucket: "anime-warehouse-3e399.firebasestorage.app",
+  messagingSenderId: "1075965879285",
+  appId: "1:1075965879285:web:230b30339862b7069eb6bc"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+// ── State ──
+let products = [];
+let logs = [];
+let currentTab = 'dashboard';
+let unsubProducts = null;
+let unsubLogs = null;
+
+// ── Auth ──
+window.signIn = async () => {
+  try {
+    await signInWithPopup(auth, new GoogleAuthProvider());
+  } catch(e){ toast('登入失敗：'+e.message); }
+};
+window.signOut = async () => {
+  if(unsubProducts) unsubProducts();
+  if(unsubLogs) unsubLogs();
+  await fbSignOut(auth);
+};
+
+onAuthStateChanged(auth, user => {
+  document.getElementById('loading').style.display = 'none';
+  if(user){
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app-screen').style.display = 'flex';
+    document.getElementById('app-screen').style.flexDirection = 'column';
+    document.getElementById('user-name').textContent = user.displayName;
+    document.getElementById('user-photo').src = user.photoURL||'';
+    startListeners();
+  } else {
+    document.getElementById('login-screen').style.display = 'flex';
+    document.getElementById('app-screen').style.display = 'none';
+    products=[]; logs=[];
+  }
+});
+
+// ── Realtime Listeners ──
+function startListeners(){
+  unsubProducts = onSnapshot(query(collection(db,'products'), orderBy('createdAt','asc')), snap => {
+    products = snap.docs.map(d=>({id:d.id,...d.data()}));
+    renderAll();
+  });
+  unsubLogs = onSnapshot(query(collection(db,'logs'), orderBy('createdAt','desc')), snap => {
+    logs = snap.docs.map(d=>({id:d.id,...d.data()}));
+    renderAll();
+  });
+}
+
+// ── Render ──
+function renderAll(){
+  updateAlertPill();
+  renderContent();
+}
+
+function updateAlertPill(){
+  const low = products.filter(p=>!p.deleted && p.stock<=p.lowAlert);
+  const el = document.getElementById('alert-pill');
+  if(low.length>0){ el.textContent='低庫存 '+low.length; el.style.display=''; }
+  else el.style.display='none';
+}
+
+window.switchTab = t => {
+  currentTab = t;
+  document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('active', b.dataset.tab===t));
+  renderContent();
+};
+
+function renderContent(){
+  const el = document.getElementById('main-content');
+  if(currentTab==='dashboard') el.innerHTML = renderDashboard();
+  else if(currentTab==='products') el.innerHTML = renderProducts();
+  else if(currentTab==='in') el.innerHTML = renderIn();
+  else if(currentTab==='out') el.innerHTML = renderOut();
+  else if(currentTab==='logs') el.innerHTML = renderLogs();
+}
+
+function renderDashboard(){
+  const active = products.filter(p=>!p.deleted);
+  const totalStock = active.reduce((a,p)=>a+p.stock,0);
+  const low = active.filter(p=>p.stock<=p.lowAlert);
+  const t = today();
+  const todayLogs = logs.filter(l=>l.date===t);
+  const totalIn = todayLogs.filter(l=>l.type==='in').reduce((a,l)=>a+l.qty,0);
+  const totalOut = todayLogs.filter(l=>l.type==='out').reduce((a,l)=>a+l.qty,0);
+
+  let alertHtml='';
+  if(low.length>0){
+    const items = low.map(p=>`<strong>${esc(p.name)}</strong>（庫存 ${p.stock}，警戒 ${p.lowAlert}）`).join('、');
+    alertHtml=`<div class="alert-banner">⚠️ <div>低庫存警示：${items}</div></div>`;
+  }
+
+  const recent = logs.slice(0,8);
+  const rows = recent.length===0
+    ? `<tr><td colspan="5" class="empty">尚無記錄</td></tr>`
+    : recent.map(l=>{
+        const p=products.find(x=>x.id===l.productId);
+        return `<tr><td>${l.date}</td><td>${p?esc(p.name):'<span style="color:#aaa">已刪除</span>'}</td><td><span class="tag ${l.type==='in'?'tag-in':'tag-out'}">${l.type==='in'?'進貨':'出貨'}</span></td><td>${l.qty}</td><td style="color:#888">${esc(l.note||'—')}</td></tr>`;
+      }).join('');
+
+  return `
+    <div class="stats-grid">
+      <div class="stat-card"><div class="label">商品種類</div><div class="value">${active.length}</div></div>
+      <div class="stat-card"><div class="label">總庫存</div><div class="value">${totalStock.toLocaleString()}</div></div>
+      <div class="stat-card danger"><div class="label">低庫存警示</div><div class="value">${low.length}</div></div>
+      <div class="stat-card blue"><div class="label">今日進貨</div><div class="value">${totalIn}</div></div>
+      <div class="stat-card amber"><div class="label">今日出貨</div><div class="value">${totalOut}</div></div>
+    </div>
+    ${alertHtml}
+    <div class="card">
+      <div class="card-title">📋 最近進出貨記錄</div>
+      <div class="tbl-wrap">
+        <table><thead><tr><th>日期</th><th>商品</th><th>類型</th><th>數量</th><th>備註</th></tr></thead>
+        <tbody>${rows}</tbody></table>
+      </div>
+    </div>`;
+}
+
+function renderProducts(){
+  const search = document.getElementById('ps')?.value||'';
+  const cat = document.getElementById('pc')?.value||'';
+  const active = products.filter(p=>!p.deleted);
+  const cats = [...new Set(active.map(p=>p.category).filter(Boolean))];
+  let list = active;
+  if(search) list=list.filter(p=>p.name.includes(search)||(p.sku||'').includes(search));
+  if(cat) list=list.filter(p=>p.category===cat);
+
+  const rows = list.length===0
+    ? `<tr><td colspan="7" class="empty">尚無商品，請點選「新增商品」</td></tr>`
+    : list.map(p=>`<tr>
+        <td style="color:#888;font-size:12px">${esc(p.sku||'—')}</td>
+        <td><strong>${esc(p.name)}</strong></td>
+        <td><span class="tag tag-gray">${esc(p.category||'—')}</span></td>
+        <td style="font-weight:600">${p.stock}</td>
+        <td><span class="tag ${p.stock<=p.lowAlert?'tag-low':'tag-ok'}">${p.stock<=p.lowAlert?'庫存不足':'正常'}</span></td>
+        <td style="color:#888">${p.lowAlert}</td>
+        <td style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn sm" onclick="openEditProduct('${p.id}')">✏️ 編輯</button>
+          <button class="btn sm danger" onclick="delProduct('${p.id}','${esc(p.name)}')">🗑️</button>
+        </td>
+      </tr>`).join('');
+
+  return `
+    <div class="toolbar">
+      <input type="text" id="ps" placeholder="搜尋商品或SKU…" oninput="renderContent()" value="${esc(search)}" style="min-width:160px">
+      <select id="pc" onchange="renderContent()">
+        <option value="">全部分類</option>
+        ${cats.map(c=>`<option value="${esc(c)}" ${cat===c?'selected':''}>${esc(c)}</option>`).join('')}
+      </select>
+      <button class="btn primary" onclick="openAddProduct()">＋ 新增商品</button>
+      <button class="btn" onclick="exportCSV()">⬇ 匯出 CSV</button>
+    </div>
+    <div class="tbl-wrap">
+      <table><thead><tr><th>SKU</th><th>商品名稱</th><th>分類</th><th>庫存</th><th>狀態</th><th>警戒值</th><th>操作</th></tr></thead>
+      <tbody>${rows}</tbody></table>
+    </div>`;
+}
+
+function renderIn(){
+  const active = products.filter(p=>!p.deleted);
+  const opts = active.length===0
+    ? '<option disabled>請先新增商品</option>'
+    : active.map(p=>`<option value="${p.id}">${esc(p.name)}（庫存：${p.stock}）</option>`).join('');
+  const recent = logs.filter(l=>l.type==='in').slice(0,5);
+  return `
+    <div class="card" style="max-width:440px">
+      <div class="card-title">🚚 新增進貨</div>
+      <div class="form-row"><label>商品</label><select id="in-p">${opts}</select></div>
+      <div class="form-row"><label>進貨數量</label><input type="number" id="in-q" min="1" value="1"></div>
+      <div class="form-row"><label>供應商 / 備註</label><input type="text" id="in-n" placeholder="選填"></div>
+      <div class="form-row"><label>日期</label><input type="date" id="in-d" value="${today()}"></div>
+      <button class="btn primary" onclick="submitIn()">✔ 確認進貨</button>
+    </div>
+    <div class="card" style="margin-top:12px">
+      <div class="card-title">最近進貨記錄</div>
+      ${miniLogTable(recent)}
+    </div>`;
+}
+
+function renderOut(){
+  const active = products.filter(p=>!p.deleted);
+  const opts = active.length===0
+    ? '<option disabled>請先新增商品</option>'
+    : active.map(p=>`<option value="${p.id}">${esc(p.name)}（庫存：${p.stock}）</option>`).join('');
+  const recent = logs.filter(l=>l.type==='out').slice(0,5);
+  return `
+    <div class="card" style="max-width:440px">
+      <div class="card-title">📤 新增出貨</div>
+      <div class="form-row"><label>商品</label><select id="out-p">${opts}</select></div>
+      <div class="form-row"><label>出貨數量</label><input type="number" id="out-q" min="1" value="1"></div>
+      <div class="form-row"><label>活動 / 收貨方 / 備註</label><input type="text" id="out-n" placeholder="例：台北場快閃"></div>
+      <div class="form-row"><label>日期</label><input type="date" id="out-d" value="${today()}"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn primary" onclick="submitOut(false)">✔ 確認出貨</button>
+        <button class="btn success" onclick="submitOut(true)">🖨️ 確認出貨並列印出貨單</button>
+      </div>
+    </div>
+    <div class="card" style="margin-top:12px">
+      <div class="card-title">最近出貨記錄</div>
+      ${miniLogTable(recent)}
+    </div>`;
+}
+
+function renderLogs(){
+  const typeF = document.getElementById('lf-type')?.value||'';
+  const dateF = document.getElementById('lf-date')?.value||'';
+  let list = [...logs];
+  if(typeF) list=list.filter(l=>l.type===typeF);
+  if(dateF) list=list.filter(l=>l.date===dateF);
+
+  const rows = list.length===0
+    ? `<tr><td colspan="6" class="empty">無符合記錄</td></tr>`
+    : list.map(l=>{
+        const p=products.find(x=>x.id===l.productId);
+        return `<tr>
+          <td>${l.date}</td>
+          <td style="color:#aaa;font-size:11px">#${l.id.slice(-5)}</td>
+          <td>${p?esc(p.name):'<span style="color:#aaa">已刪除</span>'}</td>
+          <td><span class="tag ${l.type==='in'?'tag-in':'tag-out'}">${l.type==='in'?'進貨':'出貨'}</span></td>
+          <td>${l.qty}</td>
+          <td style="color:#888">${esc(l.note||'—')}</td>
+        </tr>`;
+      }).join('');
+
+  return `
+    <div class="toolbar">
+      <select id="lf-type" onchange="renderContent()">
+        <option value="">全部類型</option>
+        <option value="in" ${typeF==='in'?'selected':''}>進貨</option>
+        <option value="out" ${typeF==='out'?'selected':''}>出貨</option>
+      </select>
+      <input type="date" id="lf-date" value="${dateF}" onchange="renderContent()">
+      <button class="btn" onclick="exportLogsCSV()">⬇ 匯出記錄 CSV</button>
+      <button class="btn success" onclick="printFiltered()">🖨️ 列印出貨單</button>
+    </div>
+    <div class="tbl-wrap">
+      <table><thead><tr><th>日期</th><th>編號</th><th>商品</th><th>類型</th><th>數量</th><th>備註</th></tr></thead>
+      <tbody>${rows}</tbody></table>
+    </div>`;
+}
+
+function miniLogTable(list){
+  if(list.length===0) return '<p style="font-size:13px;color:#aaa;padding:4px 0">尚無記錄</p>';
+  return `<table><thead><tr><th>日期</th><th>商品</th><th>數量</th><th>備註</th></tr></thead>
+    <tbody>${list.map(l=>{const p=products.find(x=>x.id===l.productId);
+      return `<tr><td>${l.date}</td><td>${p?esc(p.name):'—'}</td><td>${l.qty}</td><td style="color:#888">${esc(l.note||'—')}</td></tr>`;
+    }).join('')}</tbody></table>`;
+}
+
+// ── Product CRUD ──
+window.openAddProduct = ()=>{
+  const cats=[...new Set(products.filter(p=>!p.deleted).map(p=>p.category).filter(Boolean))];
+  modal(`<h2>新增商品</h2>
+    <div class="form-row"><label>SKU / 商品編號</label><input id="f-sku" placeholder="例：ANM-001"></div>
+    <div class="form-row"><label>商品名稱 *</label><input id="f-name" placeholder="例：鬼滅之刃 禰豆子 壓克力立牌"></div>
+    <div class="form-row"><label>分類</label><input id="f-cat" list="cat-dl" placeholder="例：壓克力周邊"><datalist id="cat-dl">${cats.map(c=>`<option>${esc(c)}</option>`).join('')}</datalist></div>
+    <div class="form-row"><label>初始庫存</label><input type="number" id="f-stock" value="0" min="0"></div>
+    <div class="form-row"><label>低庫存警戒值</label><input type="number" id="f-alert" value="5" min="0"></div>
+    <div class="form-row"><label>備註</label><textarea id="f-note"></textarea></div>
+    <div class="form-actions"><button class="btn" onclick="closeModal()">取消</button><button class="btn primary" onclick="addProduct()">新增</button></div>`);
+};
+
+window.addProduct = async()=>{
+  const name=g('f-name'); if(!name){toast('請填入商品名稱');return;}
+  const sku=g('f-sku')||('SKU-'+Date.now().toString().slice(-5));
+  try{
+    await addDoc(collection(db,'products'),{
+      sku, name, category:g('f-cat'), stock:parseInt(g('f-stock'))||0,
+      lowAlert:parseInt(g('f-alert'))||5, note:g('f-note'),
+      deleted:false, createdAt:serverTimestamp()
+    });
+    closeModal(); toast('✅ 商品已新增');
+  }catch(e){toast('錯誤：'+e.message);}
+};
+
+window.openEditProduct = id=>{
+  const p=products.find(x=>x.id===id); if(!p) return;
+  const cats=[...new Set(products.filter(x=>!x.deleted).map(x=>x.category).filter(Boolean))];
+  modal(`<h2>編輯商品</h2>
+    <div class="form-row"><label>SKU</label><input id="f-sku" value="${esc(p.sku||'')}"></div>
+    <div class="form-row"><label>商品名稱 *</label><input id="f-name" value="${esc(p.name)}"></div>
+    <div class="form-row"><label>分類</label><input id="f-cat" list="cat-dl" value="${esc(p.category||'')}"><datalist id="cat-dl">${cats.map(c=>`<option>${esc(c)}</option>`).join('')}</datalist></div>
+    <div class="form-row"><label>庫存數量</label><input type="number" id="f-stock" value="${p.stock}" min="0"></div>
+    <div class="form-row"><label>低庫存警戒值</label><input type="number" id="f-alert" value="${p.lowAlert}" min="0"></div>
+    <div class="form-row"><label>備註</label><textarea id="f-note">${esc(p.note||'')}</textarea></div>
+    <div class="form-actions"><button class="btn" onclick="closeModal()">取消</button><button class="btn primary" onclick="saveProduct('${id}')">儲存</button></div>`);
+};
+
+window.saveProduct = async id=>{
+  const name=g('f-name'); if(!name){toast('請填入商品名稱');return;}
+  try{
+    await updateDoc(doc(db,'products',id),{
+      sku:g('f-sku'), name, category:g('f-cat'),
+      stock:parseInt(g('f-stock'))||0, lowAlert:parseInt(g('f-alert'))||5, note:g('f-note')
+    });
+    closeModal(); toast('✅ 已儲存');
+  }catch(e){toast('錯誤：'+e.message);}
+};
+
+window.delProduct = async(id,name)=>{
+  if(!confirm(`確定刪除「${name}」？進出貨記錄將保留。`)) return;
+  await updateDoc(doc(db,'products',id),{deleted:true});
+  toast('已刪除');
+};
+
+// ── In/Out ──
+window.submitIn = async()=>{
+  const pid=g('in-p'), qty=parseInt(g('in-q'))||0, note=g('in-n'), date=g('in-d')||today();
+  if(!pid||qty<=0){toast('請選擇商品並填入有效數量');return;}
+  const p=products.find(x=>x.id===pid); if(!p) return;
+  try{
+    await updateDoc(doc(db,'products',pid),{stock:p.stock+qty});
+    await addDoc(collection(db,'logs'),{productId:pid, type:'in', qty, note, date, createdAt:serverTimestamp()});
+    toast(`✅ 進貨成功！${p.name} 現庫存：${p.stock+qty}`);
+  }catch(e){toast('錯誤：'+e.message);}
+};
+
+window.submitOut = async(print=false)=>{
+  const pid=g('out-p'), qty=parseInt(g('out-q'))||0, note=g('out-n'), date=g('out-d')||today();
+  if(!pid||qty<=0){toast('請選擇商品並填入有效數量');return;}
+  const p=products.find(x=>x.id===pid); if(!p) return;
+  if(p.stock<qty){toast(`⚠️ 庫存不足！目前庫存：${p.stock}`);return;}
+  try{
+    await updateDoc(doc(db,'products',pid),{stock:p.stock-qty});
+    const ref = await addDoc(collection(db,'logs'),{productId:pid, type:'out', qty, note, date, createdAt:serverTimestamp()});
+    if(print){
+      const logEntry={id:ref.id, productId:pid, type:'out', qty, note, date};
+      printSlip([logEntry]);
+    } else {
+      toast(`✅ 出貨成功！${p.name} 現庫存：${p.stock-qty}`);
+    }
+  }catch(e){toast('錯誤：'+e.message);}
+};
+
+// ── Print ──
+function printSlip(slipLogs){
+  const outLogs = slipLogs.filter(l=>l.type==='out');
+  if(outLogs.length===0){toast('無出貨資料');return;}
+  const date = outLogs[0].date;
+  const rows = outLogs.map(l=>{
+    const p=products.find(x=>x.id===l.productId);
+    return `<tr><td>${esc(p?.sku||'')}</td><td>${esc(p?.name||'已刪除')}</td><td style="text-align:center">${l.qty}</td><td>${esc(l.note||'')}</td></tr>`;
+  }).join('');
+  document.getElementById('print-area').innerHTML=`
+    <h2>📦 出貨單</h2>
+    <div class="meta">
+      出貨日期：${date}<br>
+      列印時間：${new Date().toLocaleString('zh-TW')}<br>
+      操作人員：${auth.currentUser?.displayName||''}
+    </div>
+    <table>
+      <thead><tr><th>SKU</th><th>商品名稱</th><th>數量</th><th>備註 / 活動</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="sign">
+      <div>出貨人員簽名</div>
+      <div>核對人員簽名</div>
+      <div>收貨人員簽名</div>
+    </div>`;
+  window.print();
+}
+
+window.printFiltered = ()=>{
+  const typeF = document.getElementById('lf-type')?.value||'';
+  const dateF = document.getElementById('lf-date')?.value||'';
+  let list = [...logs];
+  if(typeF) list=list.filter(l=>l.type===typeF); else list=list.filter(l=>l.type==='out');
+  if(dateF) list=list.filter(l=>l.date===dateF);
+  if(list.length===0){toast('無出貨記錄可列印');return;}
+  printSlip(list);
+};
+
+// ── Export CSV ──
+window.exportCSV = ()=>{
+  const active=products.filter(p=>!p.deleted);
+  const rows=[['SKU','商品名稱','分類','庫存','警戒值','備註'],...active.map(p=>[p.sku,p.name,p.category||'',p.stock,p.lowAlert,p.note||''])];
+  dlCSV(rows,'商品清單.csv');
+};
+window.exportLogsCSV = ()=>{
+  const rows=[['日期','商品名稱','類型','數量','備註'],...logs.map(l=>{
+    const p=products.find(x=>x.id===l.productId);
+    return [l.date,p?p.name:'已刪除',l.type==='in'?'進貨':'出貨',l.qty,l.note||''];
+  })];
+  dlCSV(rows,'進出貨記錄.csv');
+};
+function dlCSV(rows,filename){
+  const bom='\uFEFF';
+  const csv=bom+rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download=filename;a.click();
+}
+
+// ── Helpers ──
+window.closeModal=()=>document.getElementById('modal-root').innerHTML='';
+function modal(html){
+  document.getElementById('modal-root').innerHTML=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal">${html}</div></div>`;
+}
+function g(id){return document.getElementById(id)?.value||'';}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function today(){return new Date().toISOString().split('T')[0];}
+let toastTimer;
+function toast(msg){
+  const el=document.getElementById('toast');
+  el.textContent=msg;el.style.opacity=1;
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>el.style.opacity=0, 2500);
+}
+</script>
+</body>
+</html>
