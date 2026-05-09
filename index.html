@@ -456,6 +456,7 @@ function renderLogs(){
           <button class="btn sm" onclick="viewShipment('${s.id}')">查看</button>
           <button class="btn sm success" onclick="printShipment('${s.id}')">列印</button>
           <button class="btn sm" onclick="downloadShipment('${s.id}')">下載</button>
+          <button class="btn sm danger" onclick="delShipment('${s.id}')">🗑️ 刪除</button>
         </td>
       </tr>`).join('');
 
@@ -680,6 +681,35 @@ window.confirmOutCartAndPrint = async()=>{
   }catch(e){toast('錯誤：'+e.message);}
 };
 
+window.delShipment = async id=>{
+  const shipment = shipments.find(s=>s.id===id); if(!shipment){toast('找不到出貨單');return;}
+  const relatedLogs = logs.filter(l=>l.shipmentId===id && l.type==='out');
+  const qtyByProduct = {};
+  relatedLogs.forEach(l=>{ qtyByProduct[l.productId]=(qtyByProduct[l.productId]||0)+(parseInt(l.qty)||0); });
+  const restoreSummary = Object.entries(qtyByProduct).map(([pid,qty])=>{
+    const p=products.find(x=>x.id===pid);
+    return p ? `「${p.name}」庫存加回 ${qty}` : `已刪除商品 ${pid} 無法回補庫存`;
+  }).join('\n');
+  const message = relatedLogs.length>0
+    ? `確定刪除出貨單「${shipment.shipmentNo||shipment.id}」？\n這會同步刪除 ${relatedLogs.length} 筆出貨明細，並回補庫存：\n${restoreSummary}`
+    : `確定刪除出貨單「${shipment.shipmentNo||shipment.id}」？\n目前找不到對應的出貨明細，因此只會刪除出貨單紀錄。`;
+  if(!confirm(message)) return;
+  try{
+    for(const [pid,qty] of Object.entries(qtyByProduct)){
+      const p=products.find(x=>x.id===pid);
+      if(p){
+        await updateDoc(doc(db,'products',pid),{stock:(p.stock||0)+qty});
+      }
+    }
+    for(const l of relatedLogs){
+      await deleteDoc(doc(db,'logs',l.id));
+    }
+    await deleteDoc(doc(db,'shipments',id));
+    closeModal();
+    toast('已刪除出貨單並同步處理相關明細');
+  }catch(e){toast('錯誤：'+e.message);}
+};
+
 window.delLog = async id=>{
   const l=logs.find(x=>x.id===id); if(!l) return;
   const p=products.find(x=>x.id===l.productId);
@@ -762,7 +792,7 @@ window.viewShipment = id=>{
   modal(`<h2>出貨單 ${esc(shipment.shipmentNo||shipment.id)}</h2>
     <div style="font-size:12px;color:#666;line-height:1.8;margin-bottom:12px">日期：${esc(shipment.date||'')}<br>總數量：${shipment.totalQty||0}<br>建立者：${esc(shipment.createdByName||'—')}</div>
     <div class="tbl-wrap tbl-scroll"><table><thead><tr><th>SKU</th><th>商品</th><th>IP / 作品</th><th>分類</th><th>數量</th><th>備註</th></tr></thead><tbody>${(shipment.items||[]).map(item=>`<tr><td>${esc(item.sku||'')}</td><td>${esc(item.name||'')}</td><td>${esc(item.ipName||'')}</td><td>${esc(item.category||'')}</td><td>${item.qty||0}</td><td>${esc(item.note||'')}</td></tr>`).join('')}</tbody></table></div>
-    <div class="form-actions"><button class="btn" onclick="closeModal()">關閉</button><button class="btn" onclick="downloadShipment('${id}')">下載</button><button class="btn success" onclick="printShipment('${id}')">列印</button></div>`);
+    <div class="form-actions"><button class="btn" onclick="closeModal()">關閉</button><button class="btn" onclick="downloadShipment('${id}')">下載</button><button class="btn success" onclick="printShipment('${id}')">列印</button><button class="btn danger" onclick="delShipment('${id}')">刪除出貨單</button></div>`);
 };
 
 window.printShipment = id=>{
