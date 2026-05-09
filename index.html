@@ -34,7 +34,7 @@ a{color:inherit;text-decoration:none}
 .nav button.active{background:#1a1a1a;color:#fff;font-weight:500}
 .nav button:hover:not(.active){background:#f0f0ea}
 
-.content{flex:1;padding:20px;max-width:1000px;width:100%;margin:0 auto}
+.content{flex:1;padding:24px 32px;max-width:1360px;width:100%;margin:0 auto}
 
 /* Stats */
 .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:18px}
@@ -56,6 +56,10 @@ tr:hover td{background:#fafaf8}
 .tbl-wrap{border:0.5px solid #e8e8e0;border-radius:12px;overflow:hidden;overflow-x:auto}
 .tbl-scroll{max-height:320px;overflow-y:auto}
 .product-table-scroll{max-height:560px;overflow-y:auto}
+.product-table-scroll table{min-width:1180px}
+.product-table-scroll th,.product-table-scroll td{white-space:nowrap}
+.product-table-scroll td:nth-child(2){white-space:normal;min-width:220px}
+.product-actions{display:flex;gap:6px;flex-wrap:nowrap;align-items:center;white-space:nowrap}
 .shipment-table-scroll{max-height:280px;overflow-y:auto}
 .pos-table-scroll{max-height:420px;overflow-y:auto}
 .help-text{font-size:12px;color:#777;line-height:1.7;margin-top:6px}
@@ -372,10 +376,10 @@ function renderProducts(){
         <td style="color:#888">${p.lowAlert}</td>
         <td style="color:#888">${p.siteSafeStock??''}</td>
         <td style="color:#888">${p.siteTargetStock??''}</td>
-        <td style="display:flex;gap:6px;flex-wrap:wrap">
+        <td><div class="product-actions">
           <button class="btn sm" onclick="openEditProduct('${p.id}')">✏️ 編輯</button>
           <button class="btn sm danger" onclick="delProduct('${p.id}','${esc(p.name)}')">🗑️</button>
-        </td>
+        </div></td>
       </tr>`).join('');
 
   return `
