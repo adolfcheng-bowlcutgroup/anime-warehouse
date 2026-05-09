@@ -57,6 +57,10 @@ tr:hover td{background:#fafaf8}
 .tbl-scroll{max-height:320px;overflow-y:auto}
 .product-table-scroll{max-height:560px;overflow-y:auto}
 .shipment-table-scroll{max-height:280px;overflow-y:auto}
+.pos-table-scroll{max-height:420px;overflow-y:auto}
+.help-text{font-size:12px;color:#777;line-height:1.7;margin-top:6px}
+.import-result{font-size:12px;color:#555;line-height:1.8;background:#fafaf8;border:0.5px solid #e8e8e0;border-radius:10px;padding:10px 12px;margin-top:10px}
+.warning-text{color:#b91c1c;font-weight:500}
 .tbl-scroll table thead th{position:sticky;top:0;z-index:1}
 .cart-summary{font-size:12px;color:#666;margin-left:auto}
 
@@ -166,6 +170,7 @@ tr:hover td{background:#fafaf8}
     <button data-tab="in" onclick="switchTab('in')">🚚 進貨</button>
     <button data-tab="out" onclick="switchTab('out')">📤 出貨</button>
     <button data-tab="logs" onclick="switchTab('logs')">📋 記錄</button>
+    <button data-tab="field" onclick="switchTab('field')">📍 現場庫存 / 補貨</button>
   </div>
   <div class="content print-hide" id="main-content">
     <div class="empty">載入資料中…</div>
@@ -202,15 +207,21 @@ const db = getFirestore(app);
 let products = [];
 let logs = [];
 let shipments = [];
+let posSales = [];
 let currentTab = 'dashboard';
 let shippingCart = [];
 let productSearch = '';
 let productCategoryFilter = '';
 let productIpFilter = '';
 let outIpFilter = '';
+let fieldLocationFilter = '';
+let fieldIpFilter = '';
+let lastCsvImportPreview = null;
+let outDestination = '';
 let unsubProducts = null;
 let unsubLogs = null;
 let unsubShipments = null;
+let unsubPosSales = null;
 
 // ── Auth ──
 window.signIn = async () => {
@@ -222,6 +233,7 @@ window.signOut = async () => {
   if(unsubProducts) unsubProducts();
   if(unsubLogs) unsubLogs();
   if(unsubShipments) unsubShipments();
+  if(unsubPosSales) unsubPosSales();
   await fbSignOut(auth);
 };
 
@@ -237,7 +249,7 @@ onAuthStateChanged(auth, user => {
   } else {
     document.getElementById('login-screen').style.display = 'flex';
     document.getElementById('app-screen').style.display = 'none';
-    products=[]; logs=[]; shipments=[]; shippingCart=[];
+    products=[]; logs=[]; shipments=[]; posSales=[]; shippingCart=[];
   }
 });
 
@@ -253,6 +265,10 @@ function startListeners(){
   });
   unsubShipments = onSnapshot(query(collection(db,'shipments'), orderBy('createdAt','desc')), snap => {
     shipments = snap.docs.map(d=>({id:d.id,...d.data()}));
+    renderAll();
+  });
+  unsubPosSales = onSnapshot(query(collection(db,'posSales'), orderBy('importedAt','desc')), snap => {
+    posSales = snap.docs.map(d=>({id:d.id,...d.data()}));
     renderAll();
   });
 }
@@ -283,6 +299,7 @@ function renderContent(){
   else if(currentTab==='in') el.innerHTML = renderIn();
   else if(currentTab==='out') el.innerHTML = renderOut();
   else if(currentTab==='logs') el.innerHTML = renderLogs();
+  else if(currentTab==='field') el.innerHTML = renderFieldStock();
 }
 
 function renderDashboard(){
@@ -344,7 +361,7 @@ function renderProducts(){
   if(productIpFilter) list=list.filter(p=>(p.ipName||'')===productIpFilter);
 
   const rows = list.length===0
-    ? `<tr><td colspan="8" class="empty">無符合商品；可調整搜尋、分類或 IP / 作品篩選</td></tr>`
+    ? `<tr><td colspan="10" class="empty">無符合商品；可調整搜尋、分類或 IP / 作品篩選</td></tr>`
     : list.map(p=>`<tr>
         <td style="color:#888;font-size:12px">${esc(p.sku||'—')}</td>
         <td><strong>${esc(p.name)}</strong></td>
@@ -353,6 +370,8 @@ function renderProducts(){
         <td style="font-weight:600">${p.stock}</td>
         <td><span class="tag ${p.stock<=p.lowAlert?'tag-low':'tag-ok'}">${p.stock<=p.lowAlert?'庫存不足':'正常'}</span></td>
         <td style="color:#888">${p.lowAlert}</td>
+        <td style="color:#888">${p.siteSafeStock??''}</td>
+        <td style="color:#888">${p.siteTargetStock??''}</td>
         <td style="display:flex;gap:6px;flex-wrap:wrap">
           <button class="btn sm" onclick="openEditProduct('${p.id}')">✏️ 編輯</button>
           <button class="btn sm danger" onclick="delProduct('${p.id}','${esc(p.name)}')">🗑️</button>
@@ -375,7 +394,7 @@ function renderProducts(){
       <button class="btn" onclick="exportCSV()">⬇ 匯出 CSV</button>
     </div>
     <div class="tbl-wrap product-table-scroll">
-      <table><thead><tr><th>SKU</th><th>商品名稱</th><th>IP / 作品</th><th>分類</th><th>庫存</th><th>狀態</th><th>警戒值</th><th>操作</th></tr></thead>
+      <table><thead><tr><th>SKU</th><th>商品名稱</th><th>IP / 作品</th><th>分類</th><th>倉庫庫存</th><th>狀態</th><th>倉庫警戒</th><th>現場安全</th><th>現場目標</th><th>操作</th></tr></thead>
       <tbody>${rows}</tbody></table>
     </div>`;
 }
@@ -385,6 +404,10 @@ window.setProductCategory = v=>{ productCategoryFilter=v; renderContent(); };
 window.setProductIp = v=>{ productIpFilter=v; renderContent(); };
 window.clearProductFilters = ()=>{ productSearch=''; productCategoryFilter=''; productIpFilter=''; renderContent(); };
 window.setOutIpFilter = v=>{ outIpFilter=v; renderContent(); };
+window.setOutDestination = v=>{ outDestination=v; };
+window.setFieldLocation = v=>{ fieldLocationFilter=v; renderContent(); };
+window.setFieldIp = v=>{ fieldIpFilter=v; renderContent(); };
+window.clearFieldFilters = ()=>{ fieldLocationFilter=''; fieldIpFilter=''; renderContent(); };
 
 function renderIn(){
   const active = products.filter(p=>!p.deleted);
@@ -427,6 +450,7 @@ function renderOut(){
       </div>
       <div class="form-row"><label>商品</label><select id="out-p">${opts}</select></div>
       <div class="form-row"><label>出貨數量</label><input type="number" id="out-q" min="1" value="1"></div>
+      <div class="form-row"><label>出貨目的地 / 展場 *</label><input type="text" id="out-dest" list="field-location-dl" value="${esc(outDestination)}" oninput="setOutDestination(this.value)" placeholder="例：台北快閃店"><datalist id="field-location-dl">${knownLocations().map(loc=>`<option>${esc(loc)}</option>`).join('')}</datalist></div>
       <div class="form-row"><label>活動 / 收貨方 / 備註</label><input type="text" id="out-n" placeholder="例：台北場快閃"></div>
       <div class="form-row"><label>日期</label><input type="date" id="out-d" value="${today()}"></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -455,12 +479,13 @@ function renderLogs(){
   if(dateF) shipmentList=shipmentList.filter(s=>s.date===dateF);
 
   const shipmentRows = shipmentList.length===0
-    ? `<tr><td colspan="7" class="empty">尚無出貨單</td></tr>`
+    ? `<tr><td colspan="8" class="empty">尚無出貨單</td></tr>`
     : shipmentList.map(s=>`<tr>
         <td>${esc(s.date||'')}</td>
         <td><strong>${esc(s.shipmentNo||s.id)}</strong></td>
         <td>${s.items?.length||0}</td>
         <td>${s.totalQty||0}</td>
+        <td>${esc(s.destination||'—')}</td>
         <td style="color:#888">${esc(s.note||'—')}</td>
         <td style="color:#888">${esc(s.createdByName||'—')}</td>
         <td style="display:flex;gap:6px;flex-wrap:wrap">
@@ -502,7 +527,7 @@ function renderLogs(){
     <div class="card">
       <div class="card-title">🧾 出貨單紀錄</div>
       <div class="tbl-wrap shipment-table-scroll">
-        <table><thead><tr><th>日期</th><th>出貨單編號</th><th>品項數</th><th>總數量</th><th>備註</th><th>建立者</th><th>操作</th></tr></thead>
+        <table><thead><tr><th>日期</th><th>出貨單編號</th><th>品項數</th><th>總數量</th><th>目的地</th><th>備註</th><th>建立者</th><th>操作</th></tr></thead>
         <tbody>${shipmentRows}</tbody></table>
       </div>
     </div>
@@ -542,6 +567,207 @@ function shippingCartTable(){
   </div>`;
 }
 
+
+function renderFieldStock(){
+  const active = products.filter(p=>!p.deleted);
+  const locations = knownLocations();
+  const ips = [...new Set(active.map(p=>p.ipName).filter(Boolean))].sort();
+  const locationOptions = locations.map(loc=>`<option value="${esc(loc)}" ${fieldLocationFilter===loc?'selected':''}>${esc(loc)}</option>`).join('');
+  const ipOptions = ips.map(ip=>`<option value="${esc(ip)}" ${fieldIpFilter===ip?'selected':''}>${esc(ip)}</option>`).join('');
+  const rows = fieldStockRows(fieldLocationFilter, fieldIpFilter);
+  const salesRows = posSales.slice(0,50).map(s=>{
+    const p=products.find(x=>x.id===s.productId) || products.find(x=>(x.sku||'')===(s.sku||''));
+    return `<tr><td>${esc(s.saleDate||'')}</td><td>${esc(s.location||'')}</td><td>${esc(s.sku||'')}</td><td>${esc(p?.name||s.productName||'未匹配')}</td><td>${s.qty||0}</td><td style="color:#888">${esc(s.importBatchId||'')}</td><td><button class="btn sm danger" onclick="delPosSale('${s.id}')">刪除</button></td></tr>`;
+  }).join('') || `<tr><td colspan="7" class="empty">尚無 POS 銷售匯入紀錄</td></tr>`;
+  const importSummary = lastCsvImportPreview ? `<div class="import-result">${lastCsvImportPreview}</div>` : '';
+  return `
+    <div class="card">
+      <div class="card-title">📥 匯入 POS 銷售 CSV</div>
+      <div class="toolbar">
+        <input type="text" id="pos-location" list="pos-location-dl" placeholder="展場 / 門市，例如：台北快閃店" value="${esc(fieldLocationFilter)}" style="min-width:220px">
+        <datalist id="pos-location-dl">${locations.map(loc=>`<option>${esc(loc)}</option>`).join('')}</datalist>
+        <input type="date" id="pos-date" value="${today()}">
+        <input type="file" id="pos-file" accept=".csv,text/csv">
+        <button class="btn primary" onclick="importPosCsv()">匯入 CSV</button>
+      </div>
+      <div class="help-text">CSV 會自動辨識常見欄位：SKU / 商品編號、商品名稱、數量 / 銷售數量、日期、展場 / 門市。最低需求是 SKU 與銷售數量；展場與日期也可用上方欄位補上。</div>
+      ${importSummary}
+    </div>
+    <div class="toolbar">
+      <select onchange="setFieldLocation(this.value)"><option value="">全部展場 / 門市</option>${locationOptions}</select>
+      <select onchange="setFieldIp(this.value)"><option value="">全部 IP / 作品</option>${ipOptions}</select>
+      <button class="btn" onclick="clearFieldFilters()">清除篩選</button>
+      <button class="btn" onclick="exportFieldStockCSV()">⬇ 匯出現場庫存 CSV</button>
+    </div>
+    <div class="card">
+      <div class="card-title">📍 現場庫存推估 / 補貨建議</div>
+      <div class="tbl-wrap pos-table-scroll">
+        <table><thead><tr><th>展場 / 門市</th><th>SKU</th><th>商品</th><th>IP / 作品</th><th>已出貨到現場</th><th>POS 已售</th><th>推估現場庫存</th><th>安全</th><th>目標</th><th>建議補貨</th></tr></thead><tbody>${rows}</tbody></table>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">🧾 最近 POS 匯入銷售紀錄</div>
+      <div class="tbl-wrap pos-table-scroll">
+        <table><thead><tr><th>日期</th><th>展場</th><th>SKU</th><th>商品</th><th>銷售數量</th><th>匯入批號</th><th>操作</th></tr></thead><tbody>${salesRows}</tbody></table>
+      </div>
+    </div>`;
+}
+
+function knownLocations(){
+  const set = new Set();
+  shipments.forEach(s=>{ if(s.destination) set.add(s.destination); });
+  posSales.forEach(s=>{ if(s.location) set.add(s.location); });
+  if(outDestination) set.add(outDestination);
+  return [...set].filter(Boolean).sort();
+}
+
+function fieldStockData(locationFilter='', ipFilter=''){
+  const active = products.filter(p=>!p.deleted && (!ipFilter || (p.ipName||'')===ipFilter));
+  const locationSet = new Set();
+  shipments.forEach(s=>{ if(s.destination && (!locationFilter || s.destination===locationFilter)) locationSet.add(s.destination); });
+  posSales.forEach(s=>{ if(s.location && (!locationFilter || s.location===locationFilter)) locationSet.add(s.location); });
+  if(locationFilter) locationSet.add(locationFilter);
+  const locations = [...locationSet].filter(Boolean).sort();
+  const rows=[];
+  for(const loc of locations){
+    for(const p of active){
+      const shipped = shipments.filter(s=>s.destination===loc).reduce((sum,s)=>sum+(s.items||[]).filter(i=>i.productId===p.id || (i.sku&&i.sku===p.sku)).reduce((a,i)=>a+(parseInt(i.qty)||0),0),0);
+      const sold = posSales.filter(s=>s.location===loc && (s.productId===p.id || (s.sku&&s.sku===p.sku))).reduce((a,s)=>a+(parseInt(s.qty)||0),0);
+      if(shipped===0 && sold===0) continue;
+      const estimated = shipped - sold;
+      const safe = Number.isFinite(parseInt(p.siteSafeStock)) ? parseInt(p.siteSafeStock) : (parseInt(p.lowAlert)||0);
+      const target = Number.isFinite(parseInt(p.siteTargetStock)) ? parseInt(p.siteTargetStock) : Math.max(safe*3, safe);
+      const suggest = estimated < safe ? Math.max(0, target - estimated) : 0;
+      rows.push({location:loc, product:p, shipped, sold, estimated, safe, target, suggest});
+    }
+  }
+  return rows;
+}
+
+function fieldStockRows(locationFilter='', ipFilter=''){
+  const data = fieldStockData(locationFilter, ipFilter);
+  if(data.length===0) return `<tr><td colspan="10" class="empty">目前尚無可推估的現場庫存。請先建立有「目的地 / 展場」的出貨單，或匯入 POS 銷售 CSV。</td></tr>`;
+  return data.map(r=>`<tr>
+    <td>${esc(r.location)}</td>
+    <td style="color:#888;font-size:12px">${esc(r.product.sku||'')}</td>
+    <td><strong>${esc(r.product.name||'')}</strong></td>
+    <td>${esc(r.product.ipName||'未設定')}</td>
+    <td>${r.shipped}</td>
+    <td>${r.sold}</td>
+    <td style="font-weight:600" class="${r.estimated<r.safe?'warning-text':''}">${r.estimated}</td>
+    <td>${r.safe}</td>
+    <td>${r.target}</td>
+    <td>${r.suggest>0?`<span class="tag tag-low">建議補 ${r.suggest}</span>`:'<span class="tag tag-ok">暫不補</span>'}</td>
+  </tr>`).join('');
+}
+
+window.importPosCsv = async()=>{
+  const file = document.getElementById('pos-file')?.files?.[0];
+  const locationInput = g('pos-location').trim();
+  const defaultDate = g('pos-date') || today();
+  if(!file){toast('請選擇 CSV 檔案');return;}
+  if(!locationInput){toast('請填入展場 / 門市');return;}
+  try{
+    const text = await file.text();
+    const parsed = parseCSV(text);
+    if(parsed.length<2){toast('CSV 沒有可匯入的資料');return;}
+    const header = parsed[0].map(h=>String(h||'').trim());
+    const idx = detectCsvColumns(header);
+    if(idx.sku<0 || idx.qty<0){toast('CSV 需至少包含 SKU / 商品編號與銷售數量欄位');return;}
+    const batchId = 'POS-'+new Date().toISOString().replace(/[-:T.Z]/g,'').slice(0,14);
+    let imported=0, unmatched=0, skipped=0;
+    for(const row of parsed.slice(1)){
+      if(!row || row.every(c=>String(c||'').trim()==='')) continue;
+      const sku = String(row[idx.sku]||'').trim();
+      const qty = parseInt(String(row[idx.qty]||'0').replace(/,/g,''))||0;
+      if(!sku || qty<=0){skipped++; continue;}
+      const product = products.find(p=>!p.deleted && String(p.sku||'').trim().toLowerCase()===sku.toLowerCase());
+      if(!product) unmatched++;
+      const saleDate = idx.date>=0 && row[idx.date] ? normalizeDate(row[idx.date]) : defaultDate;
+      const location = idx.location>=0 && row[idx.location] ? String(row[idx.location]).trim() : locationInput;
+      await addDoc(collection(db,'posSales'),{
+        sku,
+        productId:product?.id||'',
+        productName:product?.name || (idx.name>=0 ? String(row[idx.name]||'').trim() : ''),
+        qty,
+        saleDate,
+        location,
+        importBatchId:batchId,
+        sourceFile:file.name,
+        importedByUid:auth.currentUser?.uid||'',
+        importedByName:auth.currentUser?.displayName||'',
+        importedAt:serverTimestamp()
+      });
+      imported++;
+    }
+    fieldLocationFilter = locationInput;
+    lastCsvImportPreview = `匯入完成：${imported} 筆。未匹配 SKU：${unmatched} 筆；略過空白或數量無效：${skipped} 筆。匯入批號：${batchId}`;
+    renderContent();
+    toast(`✅ POS CSV 匯入完成：${imported} 筆`);
+  }catch(e){toast('匯入錯誤：'+e.message);}
+};
+
+function detectCsvColumns(header){
+  const norm = header.map(h=>String(h).toLowerCase().replace(/\s/g,''));
+  const find = keys => norm.findIndex(h=>keys.some(k=>h.includes(k)));
+  return {
+    sku: find(['sku','商品編號','品號','貨號','barcode','條碼']),
+    name: find(['商品名稱','品名','name','product']),
+    qty: find(['銷售數量','數量','qty','quantity','售出','銷量']),
+    date: find(['日期','date','銷售日期','交易日期']),
+    location: find(['展場','門市','地點','location','site','店別'])
+  };
+}
+
+function parseCSV(text){
+  const rows=[]; let row=[], cell='', inQuotes=false;
+  text = text.replace(/^\uFEFF/, '');
+  for(let i=0;i<text.length;i++){
+    const ch=text[i], next=text[i+1];
+    if(inQuotes){
+      if(ch==='"' && next==='"'){ cell+='"'; i++; }
+      else if(ch==='"'){ inQuotes=false; }
+      else cell+=ch;
+    }else{
+      if(ch==='"') inQuotes=true;
+      else if(ch===','){ row.push(cell); cell=''; }
+      else if(ch==='\n'){ row.push(cell); rows.push(row); row=[]; cell=''; }
+      else if(ch==='\r'){}
+      else cell+=ch;
+    }
+  }
+  row.push(cell); rows.push(row);
+  return rows.filter(r=>r.some(c=>String(c||'').trim()!==''));
+}
+
+function normalizeDate(value){
+  const raw = String(value||'').trim();
+  if(/^\d{4}-\d{1,2}-\d{1,2}/.test(raw)){
+    const [y,m,d]=raw.split(/[\/\-\s]/);
+    return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  }
+  if(/^\d{4}\/\d{1,2}\/\d{1,2}/.test(raw)){
+    const [y,m,d]=raw.split(/[\/\-\s]/);
+    return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  }
+  const d = new Date(raw);
+  if(!Number.isNaN(d.getTime())) return d.toISOString().split('T')[0];
+  return today();
+}
+
+window.delPosSale = async id=>{
+  const s=posSales.find(x=>x.id===id); if(!s) return;
+  if(!confirm(`確定刪除此筆 POS 銷售紀錄？\n${s.sku} / ${s.qty} 件`)) return;
+  try{ await deleteDoc(doc(db,'posSales',id)); toast('已刪除 POS 銷售紀錄'); }
+  catch(e){toast('錯誤：'+e.message);}
+};
+
+window.exportFieldStockCSV = ()=>{
+  const data = fieldStockData(fieldLocationFilter, fieldIpFilter);
+  const rows=[['展場/門市','SKU','商品名稱','IP/作品','已出貨到現場','POS已售','推估現場庫存','安全庫存','目標庫存','建議補貨'],...data.map(r=>[r.location,r.product.sku||'',r.product.name||'',r.product.ipName||'',r.shipped,r.sold,r.estimated,r.safe,r.target,r.suggest])];
+  dlCSV(rows,'現場庫存補貨建議.csv');
+};
+
 // ── Product CRUD ──
 window.openAddProduct = ()=>{
   const cats=[...new Set(products.filter(p=>!p.deleted).map(p=>p.category).filter(Boolean))];
@@ -553,6 +779,8 @@ window.openAddProduct = ()=>{
     <div class="form-row"><label>分類</label><input id="f-cat" list="cat-dl" placeholder="例：壓克力周邊"><datalist id="cat-dl">${cats.map(c=>`<option>${esc(c)}</option>`).join('')}</datalist></div>
     <div class="form-row"><label>初始庫存</label><input type="number" id="f-stock" value="0" min="0"></div>
     <div class="form-row"><label>低庫存警戒值</label><input type="number" id="f-alert" value="5" min="0"></div>
+    <div class="form-row"><label>現場安全庫存</label><input type="number" id="f-site-safe" value="5" min="0"></div>
+    <div class="form-row"><label>現場目標庫存</label><input type="number" id="f-site-target" value="20" min="0"></div>
     <div class="form-row"><label>備註</label><textarea id="f-note"></textarea></div>
     <div class="form-actions"><button class="btn" onclick="closeModal()">取消</button><button class="btn primary" onclick="addProduct()">新增</button></div>`);
 };
@@ -563,7 +791,7 @@ window.addProduct = async()=>{
   try{
     await addDoc(collection(db,'products'),{
       sku, name, ipName:g('f-ip'), category:g('f-cat'), stock:parseInt(g('f-stock'))||0,
-      lowAlert:parseInt(g('f-alert'))||5, note:g('f-note'),
+      lowAlert:parseInt(g('f-alert'))||5, siteSafeStock:parseInt(g('f-site-safe'))||0, siteTargetStock:parseInt(g('f-site-target'))||0, note:g('f-note'),
       deleted:false, createdAt:serverTimestamp()
     });
     closeModal(); toast('✅ 商品已新增');
@@ -581,6 +809,8 @@ window.openEditProduct = id=>{
     <div class="form-row"><label>分類</label><input id="f-cat" list="cat-dl" value="${esc(p.category||'')}"><datalist id="cat-dl">${cats.map(c=>`<option>${esc(c)}</option>`).join('')}</datalist></div>
     <div class="form-row"><label>庫存數量</label><input type="number" id="f-stock" value="${p.stock}" min="0"></div>
     <div class="form-row"><label>低庫存警戒值</label><input type="number" id="f-alert" value="${p.lowAlert}" min="0"></div>
+    <div class="form-row"><label>現場安全庫存</label><input type="number" id="f-site-safe" value="${p.siteSafeStock??5}" min="0"></div>
+    <div class="form-row"><label>現場目標庫存</label><input type="number" id="f-site-target" value="${p.siteTargetStock??20}" min="0"></div>
     <div class="form-row"><label>備註</label><textarea id="f-note">${esc(p.note||'')}</textarea></div>
     <div class="form-actions"><button class="btn" onclick="closeModal()">取消</button><button class="btn primary" onclick="saveProduct('${id}')">儲存</button></div>`);
 };
@@ -590,7 +820,7 @@ window.saveProduct = async id=>{
   try{
     await updateDoc(doc(db,'products',id),{
       sku:g('f-sku'), name, ipName:g('f-ip'), category:g('f-cat'),
-      stock:parseInt(g('f-stock'))||0, lowAlert:parseInt(g('f-alert'))||5, note:g('f-note')
+      stock:parseInt(g('f-stock'))||0, lowAlert:parseInt(g('f-alert'))||5, siteSafeStock:parseInt(g('f-site-safe'))||0, siteTargetStock:parseInt(g('f-site-target'))||0, note:g('f-note')
     });
     closeModal(); toast('✅ 已儲存');
   }catch(e){toast('錯誤：'+e.message);}
@@ -645,6 +875,9 @@ window.confirmOutCartAndPrint = async()=>{
     if(!p){toast('出貨清單中有商品已不存在，請移除後再試');return;}
     if(p.stock<qty){toast(`⚠️ ${p.name} 庫存不足！目前庫存：${p.stock}，清單需求：${qty}`);return;}
   }
+  const destination = (g('out-dest') || outDestination || '').trim();
+  if(!destination){toast('請填入出貨目的地 / 展場，方便後續推估現場庫存');return;}
+  outDestination = destination;
   const cartSnapshot = shippingCart.map(i=>({...i}));
   const shipmentDate = cartSnapshot[0]?.date || today();
   const shipmentNo = makeShipmentNo(shipmentDate);
@@ -672,6 +905,7 @@ window.confirmOutCartAndPrint = async()=>{
       date:shipmentDate,
       items:shipmentItems,
       totalQty:shipmentItems.reduce((a,i)=>a+i.qty,0),
+      destination,
       note:combinedNote,
       createdByUid:auth.currentUser?.uid||'',
       createdByName:auth.currentUser?.displayName||'',
@@ -685,7 +919,7 @@ window.confirmOutCartAndPrint = async()=>{
       });
       printedLogs.push({id:ref.id, productId:item.productId, type:'out', qty:item.qty, note:item.note, date:item.date, shipmentId:shipmentRef.id, shipmentNo});
     }
-    const shipmentForPrint = {id:shipmentRef.id, shipmentNo, date:shipmentDate, items:shipmentItems, totalQty:shipmentItems.reduce((a,i)=>a+i.qty,0), note:combinedNote, createdByName:auth.currentUser?.displayName||''};
+    const shipmentForPrint = {id:shipmentRef.id, shipmentNo, date:shipmentDate, items:shipmentItems, totalQty:shipmentItems.reduce((a,i)=>a+i.qty,0), destination, note:combinedNote, createdByName:auth.currentUser?.displayName||''};
     shippingCart = [];
     renderContent();
     printShipmentObject(shipmentForPrint);
@@ -772,6 +1006,7 @@ function shipmentHtml(shipment){
     <div class="meta">
       出貨單編號：${esc(shipment.shipmentNo||shipment.id||'')}<br>
       出貨日期：${esc(shipment.date||'')}<br>
+      目的地 / 展場：${esc(shipment.destination||'—')}<br>
       總數量：${shipment.totalQty||0}<br>
       列印時間：${new Date().toLocaleString('zh-TW')}<br>
       操作人員：${esc(shipment.createdByName||auth.currentUser?.displayName||'')}
@@ -802,7 +1037,7 @@ window.viewShipment = id=>{
   const shipment = shipments.find(s=>s.id===id);
   if(!shipment){toast('找不到出貨單');return;}
   modal(`<h2>出貨單 ${esc(shipment.shipmentNo||shipment.id)}</h2>
-    <div style="font-size:12px;color:#666;line-height:1.8;margin-bottom:12px">日期：${esc(shipment.date||'')}<br>總數量：${shipment.totalQty||0}<br>建立者：${esc(shipment.createdByName||'—')}</div>
+    <div style="font-size:12px;color:#666;line-height:1.8;margin-bottom:12px">日期：${esc(shipment.date||'')}<br>目的地 / 展場：${esc(shipment.destination||'—')}<br>總數量：${shipment.totalQty||0}<br>建立者：${esc(shipment.createdByName||'—')}</div>
     <div class="tbl-wrap tbl-scroll"><table><thead><tr><th>SKU</th><th>商品</th><th>IP / 作品</th><th>分類</th><th>數量</th><th>備註</th></tr></thead><tbody>${(shipment.items||[]).map(item=>`<tr><td>${esc(item.sku||'')}</td><td>${esc(item.name||'')}</td><td>${esc(item.ipName||'')}</td><td>${esc(item.category||'')}</td><td>${item.qty||0}</td><td>${esc(item.note||'')}</td></tr>`).join('')}</tbody></table></div>
     <div class="form-actions"><button class="btn" onclick="closeModal()">關閉</button><button class="btn" onclick="downloadShipment('${id}')">下載</button><button class="btn success" onclick="printShipment('${id}')">列印</button><button class="btn danger" onclick="delShipment('${id}')">刪除出貨單</button></div>`);
 };
@@ -852,7 +1087,7 @@ window.exportLogsCSV = ()=>{
 };
 
 window.exportShipmentsCSV = ()=>{
-  const rows=[['日期','出貨單編號','品項數','總數量','備註','建立者'],...shipments.map(s=>[s.date||'',s.shipmentNo||s.id,s.items?.length||0,s.totalQty||0,s.note||'',s.createdByName||''])];
+  const rows=[['日期','出貨單編號','目的地','品項數','總數量','備註','建立者'],...shipments.map(s=>[s.date||'',s.shipmentNo||s.id,s.destination||'',s.items?.length||0,s.totalQty||0,s.note||'',s.createdByName||''])];
   dlCSV(rows,'出貨單紀錄.csv');
 };
 
