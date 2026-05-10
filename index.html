@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>瓜皮倉庫管理系統v2</title>
+<title>瓜皮倉庫管理系統v3</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Noto Sans TC',system-ui,sans-serif;font-size:14px;background:#f5f5f0;color:#1a1a1a;min-height:100vh}
@@ -492,7 +492,7 @@ function renderProducts(){
     const inputType = type === 'number' ? 'number' : 'text';
     const minAttr = type === 'number' ? ' min="0"' : '';
     const cls = 'batch-edit-input' + (type === 'number' ? ' batch-edit-number' : '') + (isDirty ? ' dirty' : '');
-    return `<input class="${cls}" type="${inputType}"${minAttr} value="${esc(current ?? '')}" onchange="setProductBatchDraft('${p.id}','${field}',this.value)" oninput="setProductBatchDraft('${p.id}','${field}',this.value,false)">`;
+    return `<input class="${cls}" type="${inputType}"${minAttr} value="${esc(current ?? '')}" onchange="setProductBatchDraft('${p.id}','${field}',this.value,false,this)" oninput="setProductBatchDraft('${p.id}','${field}',this.value,false,this)">`;
   };
 
   const existingRows = list.length===0
@@ -531,7 +531,7 @@ function renderProducts(){
       const inputType = type === 'number' ? 'number' : 'text';
       const minAttr = type === 'number' ? ' min="0"' : '';
       const cls = 'batch-edit-input' + (type === 'number' ? ' batch-edit-number' : '') + (String(r[field] ?? '').trim() ? ' dirty' : '');
-      return `<input class="${cls}" type="${inputType}"${minAttr} value="${esc(r[field] ?? '')}" onchange="setProductBatchNewRow(${idx},'${field}',this.value)" oninput="setProductBatchNewRow(${idx},'${field}',this.value,false)">`;
+      return `<input class="${cls}" type="${inputType}"${minAttr} value="${esc(r[field] ?? '')}" onchange="setProductBatchNewRow(${idx},'${field}',this.value,false,this)" oninput="setProductBatchNewRow(${idx},'${field}',this.value,false,this)">`;
     };
     return `<tr class="batch-new-row">
       <td>${newCell('sku')}</td>
@@ -550,8 +550,8 @@ function renderProducts(){
   const batchBar = batchOn ? `
     <div class="batch-edit-bar">
       <strong>批次編輯模式</strong>
-      <span>已修改 / 新增 ${dirtyCount} 筆商品。橘色欄位代表尚未儲存的修改或新增。</span>
-      <button class="btn sm primary" onclick="saveProductBatchEdits()" ${dirtyCount===0?'disabled':''}>💾 儲存批次修改 / 新增</button>
+      <span id="product-batch-status">已修改 / 新增 ${dirtyCount} 筆商品。橘色欄位代表尚未儲存的修改或新增。</span>
+      <button id="product-batch-save" class="btn sm primary" onclick="saveProductBatchEdits()" ${dirtyCount===0?'disabled':''}>💾 儲存批次修改 / 新增</button>
       <button class="btn sm" onclick="addProductBatchNewRow()">＋ 新增空白列</button>
       <button class="btn sm" onclick="cancelProductBatchEdit()">取消批次編輯</button>
     </div>
@@ -650,25 +650,61 @@ window.cancelProductBatchEdit = ()=>{
   productBatchNewRows = [];
   renderContent();
 };
-window.setProductBatchDraft = (id, field, value, rerender=true)=>{
+function refreshProductBatchUi(){
+  const count = productBatchDirtyCount();
+  const status = document.getElementById('product-batch-status');
+  if(status) status.textContent = `已修改 / 新增 ${count} 筆商品。橘色欄位代表尚未儲存的修改或新增。`;
+  const saveBtn = document.getElementById('product-batch-save');
+  if(saveBtn) saveBtn.disabled = count === 0;
+}
+function updateExistingProductInputDirty(el, id, field){
+  if(!el) return;
+  const p = products.find(x=>x.id===id && !x.deleted);
+  if(!p) return;
+  const current = normalizeProductBatchValue(field, el.value);
+  const original = productOriginalValue(p, field);
+  el.classList.toggle('dirty', String(current) !== String(original));
+}
+function updateNewProductInputDirty(el, idx, field){
+  if(!el) return;
+  const base = emptyProductBatchNewRow();
+  const current = normalizeProductBatchValue(field, el.value);
+  const original = base[field];
+  el.classList.toggle('dirty', String(current) !== String(original));
+}
+window.setProductBatchDraft = (id, field, value, rerender=true, el=null)=>{
   if(!productBatchDrafts[id]) productBatchDrafts[id] = {};
   productBatchDrafts[id][field] = normalizeProductBatchValue(field, value);
+  updateExistingProductInputDirty(el, id, field);
+  refreshProductBatchUi();
   if(rerender) renderContent();
 };
-window.setProductBatchNewRow = (idx, field, value, rerender=true)=>{
+window.setProductBatchNewRow = (idx, field, value, rerender=true, el=null)=>{
   if(!productBatchNewRows[idx]) productBatchNewRows[idx] = emptyProductBatchNewRow();
   productBatchNewRows[idx][field] = normalizeProductBatchValue(field, value);
+  updateNewProductInputDirty(el, idx, field);
+  refreshProductBatchUi();
   if(rerender) renderContent();
 };
 window.addProductBatchNewRow = ()=>{
   if(!requirePermission('canEditProduct','權限不足：你無法新增商品')) return;
   productBatchNewRows.push(emptyProductBatchNewRow());
   renderContent();
+  setTimeout(()=>{
+    const wrap = document.querySelector('.product-table-scroll');
+    if(wrap) wrap.scrollTop = wrap.scrollHeight;
+  },0);
 };
 window.removeProductBatchNewRow = idx=>{
+  const wrap = document.querySelector('.product-table-scroll');
+  const keepScroll = wrap ? wrap.scrollTop : 0;
   productBatchNewRows.splice(idx,1);
   if(productBatchNewRows.length===0) productBatchNewRows.push(emptyProductBatchNewRow());
   renderContent();
+  setTimeout(()=>{
+    const newWrap = document.querySelector('.product-table-scroll');
+    if(newWrap) newWrap.scrollTop = keepScroll;
+  },0);
 };
 window.saveProductBatchEdits = async()=>{
   if(!requirePermission('canEditProduct','權限不足：你無法批次編輯商品')) return;
