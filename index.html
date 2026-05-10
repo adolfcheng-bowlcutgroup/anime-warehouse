@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>瓜皮倉庫管理系統v3</title>
+<title>動漫周邊倉庫管理系統</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Noto Sans TC',system-ui,sans-serif;font-size:14px;background:#f5f5f0;color:#1a1a1a;min-height:100vh}
@@ -152,7 +152,7 @@ tr:hover td{background:#fafaf8}
 <div id="login-screen">
   <div class="login-card">
     <div class="logo">📦</div>
-    <h1>瓜皮倉庫管理系統</h1>
+    <h1>動漫周邊倉庫管理系統</h1>
     <p>請使用公司 Google 帳號登入<br>以存取倉庫資料</p>
     <button class="btn-google" onclick="signIn()">
       <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google">
@@ -170,6 +170,7 @@ tr:hover td{background:#fafaf8}
     <div class="user-info">
       <img id="user-photo" src="" alt="">
       <span id="user-name"></span>
+      <span class="tag tag-gray" id="user-role" style="display:none"></span>
       <button class="btn-signout" onclick="signOut()">登出</button>
     </div>
   </div>
@@ -197,7 +198,7 @@ tr:hover td{background:#fafaf8}
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut as fbSignOut, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, collection, doc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, serverTimestamp, runTransaction }
+import { getFirestore, collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, serverTimestamp, runTransaction }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -221,8 +222,8 @@ let posSales = [];
 let returns = [];
 let auditLogs = [];
 let currentTab = 'dashboard';
-// 權限功能接上前，先預設為 admin；下一階段可改為從 users collection 讀取角色。
-let currentUserRole = 'admin';
+let currentUserRole = null;
+let currentUserProfile = null;
 let shippingCart = [];
 let productSearch = '';
 let productCategoryFilter = '';
@@ -241,6 +242,76 @@ let unsubPosSales = null;
 let unsubReturns = null;
 let unsubAuditLogs = null;
 
+// ── Role / Permissions ──
+const roleLabels = { admin:'管理員', operator:'操作人員', viewer:'觀察人員' };
+const rolePermissions = {
+  admin: {
+    canEditProduct:true, canDeleteProduct:true, canCreateInbound:true, canCreateShipment:true,
+    canDeleteShipment:true, canDeleteLog:true, canImportPos:true, canDeletePosSale:true,
+    canEditFieldThreshold:true, canCreateReturn:true, canDeleteReturn:true,
+    canViewAllAuditLogs:true, canViewOwnAuditLogs:true, canDownload:true
+  },
+  operator: {
+    canEditProduct:true, canDeleteProduct:false, canCreateInbound:true, canCreateShipment:true,
+    canDeleteShipment:false, canDeleteLog:false, canImportPos:true, canDeletePosSale:false,
+    canEditFieldThreshold:true, canCreateReturn:true, canDeleteReturn:false,
+    canViewAllAuditLogs:false, canViewOwnAuditLogs:true, canDownload:true
+  },
+  viewer: {
+    canEditProduct:false, canDeleteProduct:false, canCreateInbound:false, canCreateShipment:false,
+    canDeleteShipment:false, canDeleteLog:false, canImportPos:false, canDeletePosSale:false,
+    canEditFieldThreshold:false, canCreateReturn:false, canDeleteReturn:false,
+    canViewAllAuditLogs:false, canViewOwnAuditLogs:false, canDownload:true
+  }
+};
+function can(key){ return !!(rolePermissions[currentUserRole] && rolePermissions[currentUserRole][key]); }
+function requirePermission(key, message='權限不足'){
+  if(can(key)) return true;
+  toast(message);
+  return false;
+}
+function canSeeAuditTab(){ return can('canViewAllAuditLogs') || can('canViewOwnAuditLogs'); }
+function roleName(){ return roleLabels[currentUserRole] || '未授權'; }
+function renderNav(){
+  const nav = document.getElementById('main-nav');
+  if(!nav) return;
+  const tabs = [
+    ['dashboard','📊 總覽',true],
+    ['products','📦 商品管理',true],
+    ['in','🚚 進貨',can('canCreateInbound')],
+    ['out','📤 出貨',can('canCreateShipment')],
+    ['logs','📋 記錄',true],
+    ['field','📍 現場庫存 / 補貨',true],
+    ['audit','🕘 操作紀錄',canSeeAuditTab()]
+  ].filter(t=>t[2]);
+  if(!tabs.some(t=>t[0]===currentTab)) currentTab='dashboard';
+  nav.innerHTML = tabs.map(([tab,label])=>`<button class="${currentTab===tab?'active':''}" data-tab="${tab}" onclick="switchTab('${tab}')">${label}</button>`).join('');
+}
+function cleanupListeners(){
+  [unsubProducts,unsubLogs,unsubShipments,unsubPosSales,unsubReturns,unsubAuditLogs].forEach(fn=>{ if(fn) fn(); });
+  unsubProducts=unsubLogs=unsubShipments=unsubPosSales=unsubReturns=unsubAuditLogs=null;
+}
+async function loadCurrentUserRole(user){
+  const email = (user.email||'').trim().toLowerCase();
+  if(!email) throw new Error('此 Google 帳號沒有 email，無法判斷權限');
+  const snap = await getDoc(doc(db,'users',email));
+  if(!snap.exists()) throw new Error(`此帳號尚未被授權使用系統：${email}`);
+  const data = snap.data();
+  if(data.active !== true) throw new Error(`此帳號目前未啟用：${email}`);
+  const role = String(data.role||'').trim();
+  if(!rolePermissions[role]) throw new Error(`此帳號角色設定無效：${role}`);
+  currentUserRole = role;
+  currentUserProfile = {id:snap.id, ...data};
+}
+function showUnauthorized(message){
+  cleanupListeners();
+  products=[]; logs=[]; shipments=[]; posSales=[]; returns=[]; auditLogs=[]; shippingCart=[];
+  currentUserRole = null; currentUserProfile = null;
+  document.getElementById('main-nav').innerHTML='';
+  document.getElementById('main-content').innerHTML = `<div class="card"><div class="card-title">⛔ 無法進入系統</div><p style="line-height:1.8;color:#666">${esc(message)}</p><div class="form-actions"><button class="btn" onclick="signOut()">登出</button></div></div>`;
+  const roleEl=document.getElementById('user-role'); if(roleEl){ roleEl.textContent='未授權'; roleEl.style.display=''; }
+}
+
 // ── Auth ──
 window.signIn = async () => {
   try {
@@ -248,27 +319,33 @@ window.signIn = async () => {
   } catch(e){ toast('登入失敗：'+e.message); }
 };
 window.signOut = async () => {
-  if(unsubProducts) unsubProducts();
-  if(unsubLogs) unsubLogs();
-  if(unsubShipments) unsubShipments();
-  if(unsubPosSales) unsubPosSales();
-  if(unsubReturns) unsubReturns();
-  if(unsubAuditLogs) unsubAuditLogs();
+  cleanupListeners();
   await fbSignOut(auth);
 };
 
-onAuthStateChanged(auth, user => {
+onAuthStateChanged(auth, async user => {
   document.getElementById('loading').style.display = 'none';
+  cleanupListeners();
   if(user){
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('app-screen').style.display = 'flex';
     document.getElementById('app-screen').style.flexDirection = 'column';
-    document.getElementById('user-name').textContent = user.displayName;
+    document.getElementById('user-name').textContent = user.displayName || user.email || '';
     document.getElementById('user-photo').src = user.photoURL||'';
-    startListeners();
+    try{
+      await loadCurrentUserRole(user);
+      const roleEl=document.getElementById('user-role');
+      if(roleEl){ roleEl.textContent=roleName(); roleEl.style.display=''; }
+      renderNav();
+      startListeners();
+    }catch(e){
+      showUnauthorized(e.message);
+    }
   } else {
     document.getElementById('login-screen').style.display = 'flex';
     document.getElementById('app-screen').style.display = 'none';
+    const roleEl=document.getElementById('user-role'); if(roleEl){ roleEl.textContent=''; roleEl.style.display='none'; }
+    currentUserRole=null; currentUserProfile=null;
     products=[]; logs=[]; shipments=[]; posSales=[]; returns=[]; auditLogs=[]; shippingCart=[];
   }
 });
@@ -295,15 +372,20 @@ function startListeners(){
     returns = snap.docs.map(d=>({id:d.id,...d.data()}));
     renderAll();
   });
-  unsubAuditLogs = onSnapshot(query(collection(db,'auditLogs'), orderBy('createdAt','desc')), snap => {
-    auditLogs = snap.docs.map(d=>({id:d.id,...d.data()}));
-    renderAll();
-  });
+  if(canSeeAuditTab()){
+    unsubAuditLogs = onSnapshot(query(collection(db,'auditLogs'), orderBy('createdAt','desc')), snap => {
+      auditLogs = snap.docs.map(d=>({id:d.id,...d.data()}));
+      renderAll();
+    });
+  } else {
+    auditLogs = [];
+  }
 }
 
 // ── Render ──
 function renderAll(){
   updateAlertPill();
+  renderNav();
   renderContent();
 }
 
@@ -357,7 +439,7 @@ function renderDashboard(){
           <td><span class="tag ${logTypeLabel(l.type).cls}">${logTypeLabel(l.type).text}</span></td>
           <td>${l.qty}</td>
           <td style="color:#888">${esc(l.note||'—')}</td>
-          <td><button class="btn sm danger" onclick="delLog('${l.id}')">🗑️ 刪除</button></td>
+          <td>${can('canDeleteLog')?`<button class="btn sm danger" onclick="delLog('${l.id}')">🗑️ 刪除</button>`:'—'}</td>
         </tr>`;
       }).join('');
 
@@ -400,8 +482,9 @@ function renderProducts(){
         <td><span class="tag ${p.stock<=p.lowAlert?'tag-low':'tag-ok'}">${p.stock<=p.lowAlert?'庫存不足':'正常'}</span></td>
         <td style="color:#888">${p.lowAlert}</td>
         <td><div class="product-actions">
-          <button class="btn sm" onclick="openEditProduct('${p.id}')">✏️ 編輯</button>
-          <button class="btn sm danger" onclick="delProduct('${p.id}','${esc(p.name)}')">🗑️</button>
+          ${can('canEditProduct')?`<button class="btn sm" onclick="openEditProduct('${p.id}')">✏️ 編輯</button>`:''}
+          ${can('canDeleteProduct')?`<button class="btn sm danger" onclick="delProduct('${p.id}','${esc(p.name)}')">🗑️</button>`:''}
+          ${(!can('canEditProduct')&&!can('canDeleteProduct'))?'—':''}
         </div></td>
       </tr>`).join('');
 
@@ -417,7 +500,7 @@ function renderProducts(){
         ${ips.map(ip=>`<option value="${esc(ip)}" ${productIpFilter===ip?'selected':''}>${esc(ip)}</option>`).join('')}
       </select>
       <button class="btn" onclick="clearProductFilters()">清除篩選</button>
-      <button class="btn primary" onclick="openAddProduct()">＋ 新增商品</button>
+      ${can('canEditProduct')?'<button class="btn primary" onclick="openAddProduct()">＋ 新增商品</button>':''}
       <button class="btn" onclick="exportCSV()">⬇ 匯出 CSV</button>
     </div>
     <div class="tbl-wrap product-table-scroll">
@@ -437,6 +520,7 @@ window.setFieldIp = v=>{ fieldIpFilter=v; renderContent(); };
 window.clearFieldFilters = ()=>{ fieldLocationFilter=''; fieldIpFilter=''; renderContent(); };
 
 function renderIn(){
+  if(!can('canCreateInbound')) return '<div class="card"><div class="card-title">🚚 進貨</div><p style="color:#666">你目前是 '+roleName()+'，沒有新增進貨權限。</p></div>';
   const active = products.filter(p=>!p.deleted);
   const opts = active.length===0
     ? '<option disabled>請先新增商品</option>'
@@ -458,6 +542,7 @@ function renderIn(){
 }
 
 function renderOut(){
+  if(!can('canCreateShipment')) return '<div class="card"><div class="card-title">📤 出貨</div><p style="color:#666">你目前是 '+roleName()+'，沒有建立出貨單權限。</p></div>';
   const active = products.filter(p=>!p.deleted);
   const ips = [...new Set(active.map(p=>p.ipName).filter(Boolean))].sort();
   const outProducts = outIpFilter ? active.filter(p=>(p.ipName||'')===outIpFilter) : active;
@@ -519,7 +604,7 @@ function renderLogs(){
           <button class="btn sm" onclick="viewShipment('${s.id}')">查看</button>
           <button class="btn sm success" onclick="printShipment('${s.id}')">列印</button>
           <button class="btn sm" onclick="downloadShipment('${s.id}')">下載</button>
-          <button class="btn sm danger" onclick="delShipment('${s.id}')">🗑️ 刪除</button>
+          ${can('canDeleteShipment')?`<button class="btn sm danger" onclick="delShipment('${s.id}')">🗑️ 刪除</button>`:''}
         </td>
       </tr>`).join('');
 
@@ -535,7 +620,7 @@ function renderLogs(){
           <td>${l.qty}</td>
           <td style="color:#888">${esc(l.note||'—')}</td>
           <td>${l.shipmentId?`<button class="btn sm" onclick="viewShipment('${l.shipmentId}')">出貨單</button>`:'—'}</td>
-          <td><button class="btn sm danger" onclick="delLog('${l.id}')">🗑️ 刪除</button></td>
+          <td>${can('canDeleteLog')?`<button class="btn sm danger" onclick="delLog('${l.id}')">🗑️ 刪除</button>`:'—'}</td>
         </tr>`;
       }).join('');
 
@@ -608,12 +693,15 @@ function renderAuditLogs(){
   const actionF = document.getElementById('af-action')?.value||'';
   const userF = document.getElementById('af-user')?.value||'';
   const kw = (document.getElementById('af-kw')?.value||'').trim().toLowerCase();
+  if(!canSeeAuditTab()) return '<div class="card"><div class="card-title">權限不足</div><p style="color:#666">你沒有查看操作紀錄的權限。</p></div>';
   let list = [...auditLogs];
+  if(!can('canViewAllAuditLogs')) list = list.filter(a=>(a.userEmail||'')===(auth.currentUser?.email||''));
   if(actionF) list=list.filter(a=>a.action===actionF);
-  if(userF) list=list.filter(a=>(a.userEmail||'')===userF);
+  if(userF && can('canViewAllAuditLogs')) list=list.filter(a=>(a.userEmail||'')===userF);
   if(kw) list=list.filter(a=>`${a.title||''} ${a.detail||''} ${a.userName||''} ${a.userEmail||''}`.toLowerCase().includes(kw));
   const actions=[...new Set(auditLogs.map(a=>a.action).filter(Boolean))].sort();
-  const users=[...new Set(auditLogs.map(a=>a.userEmail).filter(Boolean))].sort();
+  const users=[...new Set((can('canViewAllAuditLogs')?auditLogs:list).map(a=>a.userEmail).filter(Boolean))].sort();
+  const title = can('canViewAllAuditLogs') ? '🕘 操作紀錄 / 異動歷史' : '🕘 我的操作紀錄';
   const rows = list.slice(0,200).map(a=>{
     const when = a.createdAt?.toDate ? a.createdAt.toDate().toLocaleString('zh-TW') : '';
     return `<tr>
@@ -626,11 +714,11 @@ function renderAuditLogs(){
   }).join('') || `<tr><td colspan="5" class="empty">尚無操作紀錄</td></tr>`;
   return `<div class="toolbar">
     <select id="af-action" onchange="renderContent()"><option value="">全部操作</option>${actions.map(a=>`<option value="${esc(a)}" ${actionF===a?'selected':''}>${esc(a)}</option>`).join('')}</select>
-    <select id="af-user" onchange="renderContent()"><option value="">全部操作人</option>${users.map(u=>`<option value="${esc(u)}" ${userF===u?'selected':''}>${esc(u)}</option>`).join('')}</select>
+    ${can('canViewAllAuditLogs')?`<select id="af-user" onchange="renderContent()"><option value="">全部操作人</option>${users.map(u=>`<option value="${esc(u)}" ${userF===u?'selected':''}>${esc(u)}</option>`).join('')}</select>`:''}
     <input type="text" id="af-kw" value="${esc(kw)}" oninput="renderContent()" placeholder="搜尋操作內容…">
   </div>
   <div class="card">
-    <div class="card-title">🕘 操作紀錄 / 異動歷史</div>
+    <div class="card-title">${title}</div>
     <div class="help-text">記錄高風險操作與重要異動，例如出貨、刪除、POS 匯入、撤場回倉與安全值修改。最多顯示最近 200 筆。</div>
     <div class="tbl-wrap product-table-scroll"><table><thead><tr><th>時間</th><th>操作</th><th>內容</th><th>操作人</th><th>關聯</th></tr></thead><tbody>${rows}</tbody></table></div>
   </div>`;
@@ -654,10 +742,7 @@ function requireTypedConfirmation(message, expectedText){
   return typed === expectedText;
 }
 
-function isAdminUser(){
-  // 權限功能上線後，這裡會改為檢查登入者在 users collection 裡的 role 是否為 admin。
-  return currentUserRole === 'admin';
-}
+function isAdminUser(){ return currentUserRole === 'admin'; }
 
 function renderFieldStock(){
   const active = products.filter(p=>!p.deleted);
@@ -670,7 +755,7 @@ function renderFieldStock(){
   const returnRecordRows = returnRecordsRows(fieldLocationFilter);
   const salesRows = posSales.slice(0,50).map(s=>{
     const p=products.find(x=>x.id===s.productId) || products.find(x=>(x.sku||'')===(s.sku||''));
-    return `<tr><td>${esc(s.saleDate||'')}</td><td>${esc(s.location||'')}</td><td>${esc(s.sku||'')}</td><td>${esc(p?.name||s.productName||'未匹配')}</td><td>${s.qty||0}</td><td style="color:#888">${esc(s.importBatchId||'')}</td><td><button class="btn sm danger" onclick="delPosSale('${s.id}')">刪除</button></td></tr>`;
+    return `<tr><td>${esc(s.saleDate||'')}</td><td>${esc(s.location||'')}</td><td>${esc(s.sku||'')}</td><td>${esc(p?.name||s.productName||'未匹配')}</td><td>${s.qty||0}</td><td style="color:#888">${esc(s.importBatchId||'')}</td><td>${can('canDeletePosSale')?`<button class="btn sm danger" onclick="delPosSale('${s.id}')">刪除</button>`:'—'}</td></tr>`;
   }).join('') || `<tr><td colspan="7" class="empty">尚無 POS 銷售匯入紀錄</td></tr>`;
   const importSummary = lastCsvImportPreview ? `<div class="import-result">${lastCsvImportPreview}</div>` : '';
   const previewHtml = posCsvPreviewRows.length ? posCsvPreviewTable() : '';
@@ -682,8 +767,8 @@ function renderFieldStock(){
         <datalist id="pos-location-dl">${locations.map(loc=>`<option>${esc(loc)}</option>`).join('')}</datalist>
         <input type="date" id="pos-date" value="${today()}">
         <input type="file" id="pos-file" accept=".csv,text/csv">
-        <button class="btn primary" onclick="previewPosCsv()">預覽 CSV</button>
-        ${posCsvPreviewRows.length?'<button class="btn success" onclick="confirmImportPosCsv()">確認匯入可匯入資料</button><button class="btn" onclick="clearPosCsvPreview()">清除預覽</button>':''}
+        ${can('canImportPos')?'<button class="btn primary" onclick="previewPosCsv()">預覽 CSV</button>':''}
+        ${(can('canImportPos')&&posCsvPreviewRows.length)?'<button class="btn success" onclick="confirmImportPosCsv()">確認匯入可匯入資料</button><button class="btn" onclick="clearPosCsvPreview()">清除預覽</button>':''}
       </div>
       <div class="help-text">CSV 會先進入預覽，不會直接寫入。系統會檢查「同一天 + 同一展場 + 同一 SKU」是否已匯入，重複與找不到 SKU 的資料不會匯入。</div>
       ${importSummary}
@@ -708,7 +793,7 @@ function renderFieldStock(){
       <div class="toolbar">
         <input type="date" id="return-date" value="${today()}">
         <input type="text" id="return-note" placeholder="備註，例如：撤場回倉盤點" style="min-width:240px">
-        <button class="btn success" onclick="confirmReturnToWarehouse()">確認撤場回倉</button>
+        ${can('canCreateReturn')?'<button class="btn success" onclick="confirmReturnToWarehouse()">確認撤場回倉</button>':'<span style="color:#999;font-size:12px">僅管理員 / 操作人員可建立回倉單</span>'}
       </div>
       <div class="tbl-wrap pos-table-scroll">
         <table><thead><tr><th>展場 / 門市</th><th>SKU</th><th>商品</th><th>推估現場庫存</th><th>實際回倉數</th><th>差異</th></tr></thead><tbody>${returnInputRows}</tbody></table>
@@ -775,8 +860,8 @@ function fieldStockRows(locationFilter='', ipFilter=''){
     <td>${r.sold}</td>
     <td>${r.returned||0}</td>
     <td style="font-weight:600" class="${r.estimated<r.safe?'warning-text':''}">${r.estimated}</td>
-    <td><input class="inline-number" type="number" min="0" value="${r.safe}" onchange="updateFieldThreshold('${r.product.id}','safe',this.value)"></td>
-    <td><input class="inline-number" type="number" min="0" value="${r.target}" onchange="updateFieldThreshold('${r.product.id}','target',this.value)"></td>
+    <td>${can('canEditFieldThreshold')?`<input class="inline-number" type="number" min="0" value="${r.safe}" onchange="updateFieldThreshold('${r.product.id}','safe',this.value)">`:r.safe}</td>
+    <td>${can('canEditFieldThreshold')?`<input class="inline-number" type="number" min="0" value="${r.target}" onchange="updateFieldThreshold('${r.product.id}','target',this.value)">`:r.target}</td>
     <td>${r.suggest>0?`<span class="tag tag-low">建議補 ${r.suggest} 至 ${r.target}</span>`:'<span class="tag tag-ok">暫不補</span>'}</td>
   </tr>`).join('');
 }
@@ -796,7 +881,7 @@ function returnRecordsRows(locationFilter=''){
     <td>${r.totalQty||0}</td>
     <td style="color:#888">${esc(r.note||'—')}</td>
     <td style="color:#888">${esc(r.createdByName||'—')}</td>
-    <td>${isAdminUser()?`<button class="btn sm danger" onclick="delReturn('${r.id}')">🗑️ 刪除</button>`:'<span style="color:#aaa;font-size:12px">僅管理員</span>'}</td>
+    <td>${can('canDeleteReturn')?`<button class="btn sm danger" onclick="delReturn('${r.id}')">🗑️ 刪除</button>`:'<span style="color:#aaa;font-size:12px">僅管理員</span>'}</td>
   </tr>`).join('');
 }
 
@@ -811,7 +896,7 @@ function returnWarehouseRows(locationFilter='', ipFilter=''){
       <td style="color:#888;font-size:12px">${esc(r.product.sku||'')}</td>
       <td><strong>${esc(r.product.name||'')}</strong></td>
       <td>${r.estimated}</td>
-      <td><input class="inline-number return-qty" type="number" min="0" value="${defaultQty}" data-product-id="${r.product.id}" data-location="${esc(r.location)}" data-estimated="${r.estimated}" onchange="updateReturnDiff(this)"></td>
+      <td>${can('canCreateReturn')?`<input class="inline-number return-qty" type="number" min="0" value="${defaultQty}" data-product-id="${r.product.id}" data-location="${esc(r.location)}" data-estimated="${r.estimated}" onchange="updateReturnDiff(this)">`:defaultQty}</td>
       <td class="return-diff" data-product-id="${r.product.id}">${defaultQty-r.estimated}</td>
     </tr>`;
   }).join('');
@@ -833,6 +918,7 @@ function makeReturnNo(dateStr){
 }
 
 window.confirmReturnToWarehouse = async()=>{
+  if(!requirePermission('canCreateReturn','權限不足：你無法建立撤場回倉單')) return;
   if(!fieldLocationFilter){toast('請先篩選單一展場 / 門市');return;}
   const inputs = [...document.querySelectorAll('.return-qty')];
   if(inputs.length===0){toast('沒有可回倉資料');return;}
@@ -900,6 +986,7 @@ window.confirmReturnToWarehouse = async()=>{
 
 
 window.delReturn = async id=>{
+  if(!requirePermission('canDeleteReturn','權限不足：只有管理員可以刪除撤場回倉單')) return;
   if(!isAdminUser()){ toast('此操作僅限管理員'); return; }
   const ret = returns.find(r=>r.id===id); if(!ret){toast('找不到回倉單');return;}
   const no = ret.returnNo || ret.id;
@@ -956,6 +1043,7 @@ window.delReturn = async id=>{
 };
 
 window.updateFieldThreshold = async(productId, kind, value)=>{
+  if(!requirePermission('canEditFieldThreshold','權限不足：你無法修改現場安全值 / 目標值')) return;
   const n = parseInt(value);
   if(!productId || !Number.isFinite(n) || n<0){ toast('請輸入有效數字'); renderContent(); return; }
   const field = kind==='safe' ? 'siteSafeStock' : 'siteTargetStock';
@@ -976,6 +1064,7 @@ function existingPosSaleKeySet(){
 }
 
 window.previewPosCsv = async()=>{
+  if(!requirePermission('canImportPos','權限不足：你無法匯入 POS 銷售資料')) return;
   const file = document.getElementById('pos-file')?.files?.[0];
   const locationInput = g('pos-location').trim();
   const defaultDate = g('pos-date') || today();
@@ -1041,6 +1130,7 @@ window.clearPosCsvPreview = ()=>{
 };
 
 window.confirmImportPosCsv = async()=>{
+  if(!requirePermission('canImportPos','權限不足：你無法匯入 POS 銷售資料')) return;
   const rows = posCsvPreviewRows.filter(r=>r.status==='ok');
   if(rows.length===0){toast('沒有可匯入的資料');return;}
   const batchId = 'POS-'+new Date().toISOString().replace(/[-:T.Z]/g,'').slice(0,14);
@@ -1124,6 +1214,7 @@ function normalizeDate(value){
 }
 
 window.delPosSale = async id=>{
+  if(!requirePermission('canDeletePosSale','權限不足：只有管理員可以刪除 POS 銷售紀錄')) return;
   const s=posSales.find(x=>x.id===id); if(!s) return;
   const expected = `${s.saleDate||''}-${s.sku||''}`;
   if(!requireTypedConfirmation(`確定刪除此筆 POS 銷售紀錄？\n日期：${s.saleDate}\n展場：${s.location}\nSKU：${s.sku}\n數量：${s.qty}\n刪除後現場推估庫存會增加。`, expected)) return;
@@ -1143,6 +1234,7 @@ window.exportFieldStockCSV = ()=>{
 
 // ── Product CRUD ──
 window.openAddProduct = ()=>{
+  if(!requirePermission('canEditProduct','權限不足：你無法新增商品')) return;
   const cats=[...new Set(products.filter(p=>!p.deleted).map(p=>p.category).filter(Boolean))];
   const ips=[...new Set(products.filter(p=>!p.deleted).map(p=>p.ipName).filter(Boolean))];
   modal(`<h2>新增商品</h2>
@@ -1157,6 +1249,7 @@ window.openAddProduct = ()=>{
 };
 
 window.addProduct = async()=>{
+  if(!requirePermission('canEditProduct','權限不足：你無法新增商品')) return;
   const name=g('f-name'); if(!name){toast('請填入商品名稱');return;}
   const sku=g('f-sku')||('SKU-'+Date.now().toString().slice(-5));
   try{
@@ -1170,6 +1263,7 @@ window.addProduct = async()=>{
 };
 
 window.openEditProduct = id=>{
+  if(!requirePermission('canEditProduct','權限不足：你無法編輯商品')) return;
   const p=products.find(x=>x.id===id); if(!p) return;
   const cats=[...new Set(products.filter(x=>!x.deleted).map(x=>x.category).filter(Boolean))];
   const ips=[...new Set(products.filter(x=>!x.deleted).map(x=>x.ipName).filter(Boolean))];
@@ -1185,6 +1279,7 @@ window.openEditProduct = id=>{
 };
 
 window.saveProduct = async id=>{
+  if(!requirePermission('canEditProduct','權限不足：你無法編輯商品')) return;
   const name=g('f-name'); if(!name){toast('請填入商品名稱');return;}
   try{
     await updateDoc(doc(db,'products',id),{
@@ -1196,6 +1291,7 @@ window.saveProduct = async id=>{
 };
 
 window.delProduct = async(id,name)=>{
+  if(!requirePermission('canDeleteProduct','權限不足：只有管理員可以刪除商品')) return;
   if(!confirm(`確定刪除「${name}」？進出貨記錄將保留。`)) return;
   await updateDoc(doc(db,'products',id),{deleted:true});
   await addAuditLog('deleteProduct', `刪除商品 ${name}`, '商品已標記為刪除，進出貨記錄保留。', 'product', id);
@@ -1204,6 +1300,7 @@ window.delProduct = async(id,name)=>{
 
 // ── In/Out ──
 window.submitIn = async()=>{
+  if(!requirePermission('canCreateInbound','權限不足：你無法新增進貨')) return;
   const pid=g('in-p'), qty=parseInt(g('in-q'))||0, note=g('in-n'), date=g('in-d')||today();
   if(!pid||qty<=0){toast('請選擇商品並填入有效數量');return;}
   const p=products.find(x=>x.id===pid); if(!p) return;
@@ -1216,6 +1313,7 @@ window.submitIn = async()=>{
 };
 
 window.addOutCart = ()=>{
+  if(!requirePermission('canCreateShipment','權限不足：你無法建立出貨單')) return;
   const pid=g('out-p'), qty=parseInt(g('out-q'))||0, note=g('out-n'), date=g('out-d')||today();
   if(!pid||qty<=0){toast('請選擇商品並填入有效數量');return;}
   const p=products.find(x=>x.id===pid); if(!p) return;
@@ -1236,6 +1334,7 @@ window.removeOutCart = index=>{
 };
 
 window.confirmOutCartAndPrint = async()=>{
+  if(!requirePermission('canCreateShipment','權限不足：你無法建立出貨單')) return;
   if(shippingCart.length===0){toast('請先加入出貨清單');return;}
   const qtyByProduct = {};
   for(const item of shippingCart){
@@ -1299,6 +1398,7 @@ window.confirmOutCartAndPrint = async()=>{
 };
 
 window.delShipment = async id=>{
+  if(!requirePermission('canDeleteShipment','權限不足：只有管理員可以刪除出貨單')) return;
   const shipment = shipments.find(s=>s.id===id); if(!shipment){toast('找不到出貨單');return;}
   const no = shipment.shipmentNo||shipment.id;
   const relatedLogs = logs.filter(l=>l.shipmentId===id && l.type==='out');
@@ -1326,6 +1426,7 @@ window.delShipment = async id=>{
 };
 
 window.delLog = async id=>{
+  if(!requirePermission('canDeleteLog','權限不足：只有管理員可以刪除進出貨紀錄')) return;
   const l=logs.find(x=>x.id===id); if(!l) return;
   if(l.type==='out' && l.shipmentId){ toast('此出貨明細屬於出貨單，請刪除整張出貨單以保持庫存與現場出貨資料一致'); return; }
   if(l.type==='return' && l.returnId){ toast('此回倉明細屬於回倉單，請刪除整張回倉單以保持庫存一致'); return; }
