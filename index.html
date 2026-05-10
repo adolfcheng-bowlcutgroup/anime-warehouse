@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>動漫周邊倉庫管理系統</title>
+<title>瓜皮倉庫管理系統</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Noto Sans TC',system-ui,sans-serif;font-size:14px;background:#f5f5f0;color:#1a1a1a;min-height:100vh}
@@ -56,8 +56,9 @@ tr:hover td{background:#fafaf8}
 .tbl-wrap{border:0.5px solid #e8e8e0;border-radius:12px;overflow:hidden;overflow-x:auto}
 .tbl-scroll{max-height:320px;overflow-y:auto}
 .product-table-scroll{max-height:560px;overflow-y:auto}
-.product-table-scroll table{min-width:1180px}
+.product-table-scroll table{min-width:1080px}
 .product-table-scroll th,.product-table-scroll td{white-space:nowrap}
+.product-table-scroll table thead th,.pos-table-scroll table thead th{position:sticky;top:0;z-index:2;box-shadow:0 1px 0 #e8e8e0}
 .product-table-scroll td:nth-child(2){white-space:normal;min-width:220px}
 .product-actions{display:flex;gap:6px;flex-wrap:nowrap;align-items:center;white-space:nowrap}
 .shipment-table-scroll{max-height:280px;overflow-y:auto}
@@ -65,6 +66,8 @@ tr:hover td{background:#fafaf8}
 .help-text{font-size:12px;color:#777;line-height:1.7;margin-top:6px}
 .import-result{font-size:12px;color:#555;line-height:1.8;background:#fafaf8;border:0.5px solid #e8e8e0;border-radius:10px;padding:10px 12px;margin-top:10px}
 .warning-text{color:#b91c1c;font-weight:500}
+.inline-number{width:72px;padding:4px 6px;border:0.5px solid #d0d0c8;border-radius:6px;background:#fff;font-size:12px;font-family:inherit}
+.inline-number:focus{border-color:#1a1a1a;outline:none}
 .tbl-scroll table thead th{position:sticky;top:0;z-index:1}
 .cart-summary{font-size:12px;color:#666;margin-left:auto}
 
@@ -147,7 +150,7 @@ tr:hover td{background:#fafaf8}
 <div id="login-screen">
   <div class="login-card">
     <div class="logo">📦</div>
-    <h1>動漫周邊倉庫管理系統</h1>
+    <h1>瓜皮倉庫管理系統</h1>
     <p>請使用公司 Google 帳號登入<br>以存取倉庫資料</p>
     <button class="btn-google" onclick="signIn()">
       <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google">
@@ -365,7 +368,7 @@ function renderProducts(){
   if(productIpFilter) list=list.filter(p=>(p.ipName||'')===productIpFilter);
 
   const rows = list.length===0
-    ? `<tr><td colspan="10" class="empty">無符合商品；可調整搜尋、分類或 IP / 作品篩選</td></tr>`
+    ? `<tr><td colspan="8" class="empty">無符合商品；可調整搜尋、分類或 IP / 作品篩選</td></tr>`
     : list.map(p=>`<tr>
         <td style="color:#888;font-size:12px">${esc(p.sku||'—')}</td>
         <td><strong>${esc(p.name)}</strong></td>
@@ -374,8 +377,6 @@ function renderProducts(){
         <td style="font-weight:600">${p.stock}</td>
         <td><span class="tag ${p.stock<=p.lowAlert?'tag-low':'tag-ok'}">${p.stock<=p.lowAlert?'庫存不足':'正常'}</span></td>
         <td style="color:#888">${p.lowAlert}</td>
-        <td style="color:#888">${p.siteSafeStock??''}</td>
-        <td style="color:#888">${p.siteTargetStock??''}</td>
         <td><div class="product-actions">
           <button class="btn sm" onclick="openEditProduct('${p.id}')">✏️ 編輯</button>
           <button class="btn sm danger" onclick="delProduct('${p.id}','${esc(p.name)}')">🗑️</button>
@@ -398,7 +399,7 @@ function renderProducts(){
       <button class="btn" onclick="exportCSV()">⬇ 匯出 CSV</button>
     </div>
     <div class="tbl-wrap product-table-scroll">
-      <table><thead><tr><th>SKU</th><th>商品名稱</th><th>IP / 作品</th><th>分類</th><th>倉庫庫存</th><th>狀態</th><th>倉庫警戒</th><th>現場安全</th><th>現場目標</th><th>操作</th></tr></thead>
+      <table><thead><tr><th>SKU</th><th>商品名稱</th><th>IP / 作品</th><th>分類</th><th>倉庫庫存</th><th>狀態</th><th>倉庫警戒</th><th>操作</th></tr></thead>
       <tbody>${rows}</tbody></table>
     </div>`;
 }
@@ -605,8 +606,9 @@ function renderFieldStock(){
     </div>
     <div class="card">
       <div class="card-title">📍 現場庫存推估 / 補貨建議</div>
+      <div class="help-text">可直接在「安全值」與「目標值」欄位輸入數字並離開欄位儲存；當推估現場庫存低於安全值時，系統會建議補到目標值的差額。</div>
       <div class="tbl-wrap pos-table-scroll">
-        <table><thead><tr><th>展場 / 門市</th><th>SKU</th><th>商品</th><th>IP / 作品</th><th>已出貨到現場</th><th>POS 已售</th><th>推估現場庫存</th><th>安全</th><th>目標</th><th>建議補貨</th></tr></thead><tbody>${rows}</tbody></table>
+        <table><thead><tr><th>展場 / 門市</th><th>SKU</th><th>商品</th><th>IP / 作品</th><th>已出貨到現場</th><th>POS 已售</th><th>推估現場庫存</th><th>安全值</th><th>目標值</th><th>建議補貨</th></tr></thead><tbody>${rows}</tbody></table>
       </div>
     </div>
     <div class="card">
@@ -659,11 +661,22 @@ function fieldStockRows(locationFilter='', ipFilter=''){
     <td>${r.shipped}</td>
     <td>${r.sold}</td>
     <td style="font-weight:600" class="${r.estimated<r.safe?'warning-text':''}">${r.estimated}</td>
-    <td>${r.safe}</td>
-    <td>${r.target}</td>
-    <td>${r.suggest>0?`<span class="tag tag-low">建議補 ${r.suggest}</span>`:'<span class="tag tag-ok">暫不補</span>'}</td>
+    <td><input class="inline-number" type="number" min="0" value="${r.safe}" onchange="updateFieldThreshold('${r.product.id}','safe',this.value)"></td>
+    <td><input class="inline-number" type="number" min="0" value="${r.target}" onchange="updateFieldThreshold('${r.product.id}','target',this.value)"></td>
+    <td>${r.suggest>0?`<span class="tag tag-low">建議補 ${r.suggest} 至 ${r.target}</span>`:'<span class="tag tag-ok">暫不補</span>'}</td>
   </tr>`).join('');
 }
+
+
+window.updateFieldThreshold = async(productId, kind, value)=>{
+  const n = parseInt(value);
+  if(!productId || !Number.isFinite(n) || n<0){ toast('請輸入有效數字'); renderContent(); return; }
+  const field = kind==='safe' ? 'siteSafeStock' : 'siteTargetStock';
+  try{
+    await updateDoc(doc(db,'products',productId),{[field]:n});
+    toast(kind==='safe' ? '已更新現場安全值' : '已更新現場目標值');
+  }catch(e){toast('錯誤：'+e.message);}
+};
 
 window.importPosCsv = async()=>{
   const file = document.getElementById('pos-file')?.files?.[0];
@@ -783,8 +796,6 @@ window.openAddProduct = ()=>{
     <div class="form-row"><label>分類</label><input id="f-cat" list="cat-dl" placeholder="例：壓克力周邊"><datalist id="cat-dl">${cats.map(c=>`<option>${esc(c)}</option>`).join('')}</datalist></div>
     <div class="form-row"><label>初始庫存</label><input type="number" id="f-stock" value="0" min="0"></div>
     <div class="form-row"><label>低庫存警戒值</label><input type="number" id="f-alert" value="5" min="0"></div>
-    <div class="form-row"><label>現場安全庫存</label><input type="number" id="f-site-safe" value="5" min="0"></div>
-    <div class="form-row"><label>現場目標庫存</label><input type="number" id="f-site-target" value="20" min="0"></div>
     <div class="form-row"><label>備註</label><textarea id="f-note"></textarea></div>
     <div class="form-actions"><button class="btn" onclick="closeModal()">取消</button><button class="btn primary" onclick="addProduct()">新增</button></div>`);
 };
@@ -795,7 +806,7 @@ window.addProduct = async()=>{
   try{
     await addDoc(collection(db,'products'),{
       sku, name, ipName:g('f-ip'), category:g('f-cat'), stock:parseInt(g('f-stock'))||0,
-      lowAlert:parseInt(g('f-alert'))||5, siteSafeStock:parseInt(g('f-site-safe'))||0, siteTargetStock:parseInt(g('f-site-target'))||0, note:g('f-note'),
+      lowAlert:parseInt(g('f-alert'))||5, note:g('f-note'),
       deleted:false, createdAt:serverTimestamp()
     });
     closeModal(); toast('✅ 商品已新增');
@@ -813,8 +824,6 @@ window.openEditProduct = id=>{
     <div class="form-row"><label>分類</label><input id="f-cat" list="cat-dl" value="${esc(p.category||'')}"><datalist id="cat-dl">${cats.map(c=>`<option>${esc(c)}</option>`).join('')}</datalist></div>
     <div class="form-row"><label>庫存數量</label><input type="number" id="f-stock" value="${p.stock}" min="0"></div>
     <div class="form-row"><label>低庫存警戒值</label><input type="number" id="f-alert" value="${p.lowAlert}" min="0"></div>
-    <div class="form-row"><label>現場安全庫存</label><input type="number" id="f-site-safe" value="${p.siteSafeStock??5}" min="0"></div>
-    <div class="form-row"><label>現場目標庫存</label><input type="number" id="f-site-target" value="${p.siteTargetStock??20}" min="0"></div>
     <div class="form-row"><label>備註</label><textarea id="f-note">${esc(p.note||'')}</textarea></div>
     <div class="form-actions"><button class="btn" onclick="closeModal()">取消</button><button class="btn primary" onclick="saveProduct('${id}')">儲存</button></div>`);
 };
@@ -824,7 +833,7 @@ window.saveProduct = async id=>{
   try{
     await updateDoc(doc(db,'products',id),{
       sku:g('f-sku'), name, ipName:g('f-ip'), category:g('f-cat'),
-      stock:parseInt(g('f-stock'))||0, lowAlert:parseInt(g('f-alert'))||5, siteSafeStock:parseInt(g('f-site-safe'))||0, siteTargetStock:parseInt(g('f-site-target'))||0, note:g('f-note')
+      stock:parseInt(g('f-stock'))||0, lowAlert:parseInt(g('f-alert'))||5, note:g('f-note')
     });
     closeModal(); toast('✅ 已儲存');
   }catch(e){toast('錯誤：'+e.message);}
