@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>瓜皮倉庫管理系統v1</title>
+<title>瓜皮倉庫管理系統v2</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Noto Sans TC',system-ui,sans-serif;font-size:14px;background:#f5f5f0;color:#1a1a1a;min-height:100vh}
@@ -68,6 +68,8 @@ tr:hover td{background:#fafaf8}
 .batch-edit-number{min-width:72px;text-align:right}
 .batch-edit-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#fff7ed;border:0.5px solid #fed7aa;border-radius:10px;padding:10px 12px;margin-bottom:12px;color:#92400e;font-size:12px;line-height:1.6}
 .batch-edit-hint{font-size:12px;color:#777;line-height:1.6;margin:-4px 0 12px 0}
+.batch-new-row td{background:#fffdf5}
+.batch-new-row-label{font-size:12px;color:#92400e;font-weight:600;white-space:nowrap}
 .shipment-table-scroll{max-height:280px;overflow-y:auto}
 .pos-table-scroll{max-height:420px;overflow-y:auto}
 .help-text{font-size:12px;color:#777;line-height:1.7;margin-top:6px}
@@ -237,6 +239,7 @@ let productCategoryFilter = '';
 let productIpFilter = '';
 let productBatchEditMode = false;
 let productBatchDrafts = {};
+let productBatchNewRows = [];
 let outIpFilter = '';
 let fieldLocationFilter = '';
 let fieldIpFilter = '';
@@ -314,7 +317,7 @@ async function loadCurrentUserRole(user){
 }
 function showUnauthorized(message){
   cleanupListeners();
-  products=[]; logs=[]; shipments=[]; posSales=[]; returns=[]; auditLogs=[]; shippingCart=[]; productBatchEditMode=false; productBatchDrafts={};
+  products=[]; logs=[]; shipments=[]; posSales=[]; returns=[]; auditLogs=[]; shippingCart=[]; productBatchEditMode=false; productBatchDrafts={}; productBatchNewRows=[];
   currentUserRole = null; currentUserProfile = null;
   document.getElementById('main-nav').innerHTML='';
   document.getElementById('main-content').innerHTML = `<div class="card"><div class="card-title">⛔ 無法進入系統</div><p style="line-height:1.8;color:#666">${esc(message)}</p><div class="form-actions"><button class="btn" onclick="signOut()">登出</button></div></div>`;
@@ -355,7 +358,7 @@ onAuthStateChanged(auth, async user => {
     document.getElementById('app-screen').style.display = 'none';
     const roleEl=document.getElementById('user-role'); if(roleEl){ roleEl.textContent=''; roleEl.style.display='none'; }
     currentUserRole=null; currentUserProfile=null;
-    products=[]; logs=[]; shipments=[]; posSales=[]; returns=[]; auditLogs=[]; shippingCart=[]; productBatchEditMode=false; productBatchDrafts={};
+    products=[]; logs=[]; shipments=[]; posSales=[]; returns=[]; auditLogs=[]; shippingCart=[]; productBatchEditMode=false; productBatchDrafts={}; productBatchNewRows=[];
   }
 });
 
@@ -492,7 +495,7 @@ function renderProducts(){
     return `<input class="${cls}" type="${inputType}"${minAttr} value="${esc(current ?? '')}" onchange="setProductBatchDraft('${p.id}','${field}',this.value)" oninput="setProductBatchDraft('${p.id}','${field}',this.value,false)">`;
   };
 
-  const rows = list.length===0
+  const existingRows = list.length===0
     ? `<tr><td colspan="8" class="empty">無符合商品；可調整搜尋、分類或 IP / 作品篩選</td></tr>`
     : list.map(p=>{
         if(batchOn){
@@ -523,14 +526,36 @@ function renderProducts(){
         </tr>`;
       }).join('');
 
+  const newRowsHtml = batchOn ? productBatchNewRows.map((r,idx)=>{
+    const newCell = (field, type='text') => {
+      const inputType = type === 'number' ? 'number' : 'text';
+      const minAttr = type === 'number' ? ' min="0"' : '';
+      const cls = 'batch-edit-input' + (type === 'number' ? ' batch-edit-number' : '') + (String(r[field] ?? '').trim() ? ' dirty' : '');
+      return `<input class="${cls}" type="${inputType}"${minAttr} value="${esc(r[field] ?? '')}" onchange="setProductBatchNewRow(${idx},'${field}',this.value)" oninput="setProductBatchNewRow(${idx},'${field}',this.value,false)">`;
+    };
+    return `<tr class="batch-new-row">
+      <td>${newCell('sku')}</td>
+      <td>${newCell('name')}</td>
+      <td>${newCell('ipName')}</td>
+      <td>${newCell('category')}</td>
+      <td>${newCell('stock','number')}</td>
+      <td><span class="tag tag-gray">新增</span></td>
+      <td>${newCell('lowAlert','number')}</td>
+      <td><div class="product-actions"><span class="batch-new-row-label">新增商品</span><button class="btn sm danger" onclick="removeProductBatchNewRow(${idx})">移除</button></div></td>
+    </tr>`;
+  }).join('') : '';
+
+  const rows = existingRows + newRowsHtml;
+
   const batchBar = batchOn ? `
     <div class="batch-edit-bar">
       <strong>批次編輯模式</strong>
-      <span>已修改 ${dirtyCount} 筆商品。橘色欄位代表尚未儲存的修改。</span>
-      <button class="btn sm primary" onclick="saveProductBatchEdits()" ${dirtyCount===0?'disabled':''}>💾 儲存批次修改</button>
+      <span>已修改 / 新增 ${dirtyCount} 筆商品。橘色欄位代表尚未儲存的修改或新增。</span>
+      <button class="btn sm primary" onclick="saveProductBatchEdits()" ${dirtyCount===0?'disabled':''}>💾 儲存批次修改 / 新增</button>
+      <button class="btn sm" onclick="addProductBatchNewRow()">＋ 新增空白列</button>
       <button class="btn sm" onclick="cancelProductBatchEdit()">取消批次編輯</button>
     </div>
-    <div class="batch-edit-hint">可直接在表格中修改 SKU、商品名稱、IP / 作品、分類、倉庫庫存、倉庫警戒。按「儲存批次修改」前，資料不會寫入 Firebase。</div>` : '';
+    <div class="batch-edit-hint">可直接在表格中修改既有商品，也可在最下方空白列新增商品。按「儲存批次修改 / 新增」前，資料不會寫入 Firebase。</div>` : '';
 
   return `
     <div class="toolbar">
@@ -587,7 +612,26 @@ function productBatchDirtyProducts(){
   }
   return dirty;
 }
-function productBatchDirtyCount(){ return productBatchDirtyProducts().length; }
+function emptyProductBatchNewRow(){
+  return { sku:'', name:'', ipName:'', category:'', stock:0, lowAlert:5 };
+}
+function productBatchNewRowHasAnyValue(row){
+  return ['sku','name','ipName','category'].some(f=>String(row[f]||'').trim()) || Number(row.stock||0)>0 || Number(row.lowAlert||5)!==5;
+}
+function productBatchNewRowsToCreate(){
+  return productBatchNewRows
+    .map(row=>({
+      sku:normalizeProductBatchValue('sku', row.sku),
+      name:normalizeProductBatchValue('name', row.name),
+      ipName:normalizeProductBatchValue('ipName', row.ipName),
+      category:normalizeProductBatchValue('category', row.category),
+      stock:normalizeProductBatchValue('stock', row.stock),
+      lowAlert:normalizeProductBatchValue('lowAlert', row.lowAlert || 5),
+      _hasAny:productBatchNewRowHasAnyValue(row)
+    }))
+    .filter(row=>row._hasAny);
+}
+function productBatchDirtyCount(){ return productBatchDirtyProducts().length + productBatchNewRowsToCreate().length; }
 window.toggleProductBatchEdit = ()=>{
   if(!requirePermission('canEditProduct','權限不足：你無法批次編輯商品')) return;
   if(productBatchEditMode && productBatchDirtyCount()>0){
@@ -596,12 +640,14 @@ window.toggleProductBatchEdit = ()=>{
   }
   productBatchEditMode = !productBatchEditMode;
   productBatchDrafts = {};
+  productBatchNewRows = productBatchEditMode ? [emptyProductBatchNewRow()] : [];
   renderContent();
 };
 window.cancelProductBatchEdit = ()=>{
   if(productBatchDirtyCount()>0 && !confirm('確定取消批次編輯？尚未儲存的修改會消失。')) return;
   productBatchEditMode = false;
   productBatchDrafts = {};
+  productBatchNewRows = [];
   renderContent();
 };
 window.setProductBatchDraft = (id, field, value, rerender=true)=>{
@@ -609,23 +655,60 @@ window.setProductBatchDraft = (id, field, value, rerender=true)=>{
   productBatchDrafts[id][field] = normalizeProductBatchValue(field, value);
   if(rerender) renderContent();
 };
+window.setProductBatchNewRow = (idx, field, value, rerender=true)=>{
+  if(!productBatchNewRows[idx]) productBatchNewRows[idx] = emptyProductBatchNewRow();
+  productBatchNewRows[idx][field] = normalizeProductBatchValue(field, value);
+  if(rerender) renderContent();
+};
+window.addProductBatchNewRow = ()=>{
+  if(!requirePermission('canEditProduct','權限不足：你無法新增商品')) return;
+  productBatchNewRows.push(emptyProductBatchNewRow());
+  renderContent();
+};
+window.removeProductBatchNewRow = idx=>{
+  productBatchNewRows.splice(idx,1);
+  if(productBatchNewRows.length===0) productBatchNewRows.push(emptyProductBatchNewRow());
+  renderContent();
+};
 window.saveProductBatchEdits = async()=>{
   if(!requirePermission('canEditProduct','權限不足：你無法批次編輯商品')) return;
   const dirty = productBatchDirtyProducts();
-  if(dirty.length===0){ toast('沒有需要儲存的修改'); return; }
+  const newRows = productBatchNewRowsToCreate();
+  if(dirty.length===0 && newRows.length===0){ toast('沒有需要儲存的修改或新增商品'); return; }
   const emptyName = dirty.find(d=>Object.prototype.hasOwnProperty.call(d.payload,'name') && !String(d.payload.name||'').trim());
   if(emptyName){ toast('商品名稱不可空白'); return; }
+  const newWithoutName = newRows.find(r=>!String(r.name||'').trim());
+  if(newWithoutName){ toast('新增商品列必須填寫商品名稱'); return; }
   const negative = dirty.find(d=>('stock' in d.payload && d.payload.stock<0) || ('lowAlert' in d.payload && d.payload.lowAlert<0));
-  if(negative){ toast('庫存與警戒值不可小於 0'); return; }
-  if(!confirm(`確定儲存 ${dirty.length} 筆商品的批次修改？`)) return;
+  if(negative || newRows.find(r=>r.stock<0 || r.lowAlert<0)){ toast('庫存與警戒值不可小於 0'); return; }
+  const summary = `${dirty.length} 筆修改、${newRows.length} 筆新增`;
+  if(!confirm(`確定儲存批次商品資料？
+${summary}`)) return;
   try{
     for(const d of dirty){
       await updateDoc(doc(db,'products',d.id), d.payload);
     }
-    await addAuditLog('batchUpdateProducts', `批次修改商品 ${dirty.length} 筆`, dirty.map(d=>`${d.product.sku||''} ${d.product.name||''}`).join('、').slice(0,500), 'product', '', {count:dirty.length});
+    const createdNames = [];
+    for(const r of newRows){
+      const sku = r.sku || ('SKU-'+Date.now().toString().slice(-5)+'-'+Math.floor(Math.random()*1000));
+      await addDoc(collection(db,'products'),{
+        sku, name:r.name, ipName:r.ipName, category:r.category,
+        stock:r.stock, lowAlert:r.lowAlert || 5,
+        note:'', fieldSafeStock:0, fieldTargetStock:0,
+        deleted:false, createdAt:serverTimestamp()
+      });
+      createdNames.push(`${sku} ${r.name}`);
+    }
+    if(dirty.length>0){
+      await addAuditLog('batchUpdateProducts', `批次修改商品 ${dirty.length} 筆`, dirty.map(d=>`${d.product.sku||''} ${d.product.name||''}`).join('、').slice(0,500), 'product', '', {count:dirty.length});
+    }
+    if(newRows.length>0){
+      await addAuditLog('batchCreateProducts', `批次新增商品 ${newRows.length} 筆`, createdNames.join('、').slice(0,500), 'product', '', {count:newRows.length});
+    }
     productBatchEditMode = false;
     productBatchDrafts = {};
-    toast(`✅ 已儲存 ${dirty.length} 筆商品修改`);
+    productBatchNewRows = [];
+    toast(`✅ 已儲存：${summary}`);
   }catch(e){ toast('批次儲存失敗：'+e.message); }
 };
 window.setOutIpFilter = v=>{ outIpFilter=v; renderContent(); };
