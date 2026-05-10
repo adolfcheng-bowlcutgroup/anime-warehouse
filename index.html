@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>瓜皮倉庫管理系統v2</title>
+<title>瓜皮倉庫管理系統</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Noto Sans TC',system-ui,sans-serif;font-size:14px;background:#f5f5f0;color:#1a1a1a;min-height:100vh}
@@ -221,6 +221,8 @@ let posSales = [];
 let returns = [];
 let auditLogs = [];
 let currentTab = 'dashboard';
+// 權限功能接上前，先預設為 admin；下一階段可改為從 users collection 讀取角色。
+let currentUserRole = 'admin';
 let shippingCart = [];
 let productSearch = '';
 let productCategoryFilter = '';
@@ -652,6 +654,11 @@ function requireTypedConfirmation(message, expectedText){
   return typed === expectedText;
 }
 
+function isAdminUser(){
+  // 權限功能上線後，這裡會改為檢查登入者在 users collection 裡的 role 是否為 admin。
+  return currentUserRole === 'admin';
+}
+
 function renderFieldStock(){
   const active = products.filter(p=>!p.deleted);
   const locations = knownLocations();
@@ -659,7 +666,8 @@ function renderFieldStock(){
   const locationOptions = locations.map(loc=>`<option value="${esc(loc)}" ${fieldLocationFilter===loc?'selected':''}>${esc(loc)}</option>`).join('');
   const ipOptions = ips.map(ip=>`<option value="${esc(ip)}" ${fieldIpFilter===ip?'selected':''}>${esc(ip)}</option>`).join('');
   const rows = fieldStockRows(fieldLocationFilter, fieldIpFilter);
-  const returnRows = returnWarehouseRows(fieldLocationFilter, fieldIpFilter);
+  const returnInputRows = returnWarehouseRows(fieldLocationFilter, fieldIpFilter);
+  const returnRecordRows = returnRecordsRows(fieldLocationFilter);
   const salesRows = posSales.slice(0,50).map(s=>{
     const p=products.find(x=>x.id===s.productId) || products.find(x=>(x.sku||'')===(s.sku||''));
     return `<tr><td>${esc(s.saleDate||'')}</td><td>${esc(s.location||'')}</td><td>${esc(s.sku||'')}</td><td>${esc(p?.name||s.productName||'未匹配')}</td><td>${s.qty||0}</td><td style="color:#888">${esc(s.importBatchId||'')}</td><td><button class="btn sm danger" onclick="delPosSale('${s.id}')">刪除</button></td></tr>`;
@@ -703,7 +711,14 @@ function renderFieldStock(){
         <button class="btn success" onclick="confirmReturnToWarehouse()">確認撤場回倉</button>
       </div>
       <div class="tbl-wrap pos-table-scroll">
-        <table><thead><tr><th>展場 / 門市</th><th>SKU</th><th>商品</th><th>推估現場庫存</th><th>實際回倉數</th><th>差異</th></tr></thead><tbody>${returnRows}</tbody></table>
+        <table><thead><tr><th>展場 / 門市</th><th>SKU</th><th>商品</th><th>推估現場庫存</th><th>實際回倉數</th><th>差異</th></tr></thead><tbody>${returnInputRows}</tbody></table>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">↩️ 撤場回倉單紀錄</div>
+      <div class="help-text">刪除回倉單會同步刪除該單的回倉明細，並把先前加回大倉的數量扣回。此操作預留為管理員權限。</div>
+      <div class="tbl-wrap shipment-table-scroll">
+        <table><thead><tr><th>日期</th><th>回倉單編號</th><th>展場 / 門市</th><th>品項數</th><th>回倉總數</th><th>備註</th><th>建立者</th><th>操作</th></tr></thead><tbody>${returnRecordRows}</tbody></table>
       </div>
     </div>
     <div class="card">
@@ -767,6 +782,23 @@ function fieldStockRows(locationFilter='', ipFilter=''){
 }
 
 
+
+
+function returnRecordsRows(locationFilter=''){
+  let list = [...returns];
+  if(locationFilter) list = list.filter(r=>r.location===locationFilter);
+  if(list.length===0) return `<tr><td colspan="8" class="empty">尚無撤場回倉單</td></tr>`;
+  return list.slice(0,100).map(r=>`<tr>
+    <td>${esc(r.date||'')}</td>
+    <td><strong>${esc(r.returnNo||r.id)}</strong></td>
+    <td>${esc(r.location||'')}</td>
+    <td>${(r.items||[]).length}</td>
+    <td>${r.totalQty||0}</td>
+    <td style="color:#888">${esc(r.note||'—')}</td>
+    <td style="color:#888">${esc(r.createdByName||'—')}</td>
+    <td>${isAdminUser()?`<button class="btn sm danger" onclick="delReturn('${r.id}')">🗑️ 刪除</button>`:'<span style="color:#aaa;font-size:12px">僅管理員</span>'}</td>
+  </tr>`).join('');
+}
 
 function returnWarehouseRows(locationFilter='', ipFilter=''){
   if(!locationFilter) return `<tr><td colspan="6" class="empty">請先在上方選擇單一展場 / 門市，再進行撤場回倉。</td></tr>`;
@@ -863,6 +895,63 @@ window.confirmReturnToWarehouse = async()=>{
     await addAuditLog('returnToWarehouse', `建立撤場回倉單 ${returnNo}`, `展場：${fieldLocationFilter}；品項 ${items.length} 筆；回倉總數 ${totalQty}。`, 'return', ref.id, {returnNo,totalQty,location:fieldLocationFilter});
     toast(`✅ 已建立回倉單 ${returnNo}，並加回庫存`);
     renderContent();
+  }catch(e){toast('錯誤：'+e.message);}
+};
+
+
+window.delReturn = async id=>{
+  if(!isAdminUser()){ toast('此操作僅限管理員'); return; }
+  const ret = returns.find(r=>r.id===id); if(!ret){toast('找不到回倉單');return;}
+  const no = ret.returnNo || ret.id;
+  const relatedLogs = logs.filter(l=>l.returnId===id && l.type==='return');
+  const qtyByProduct = {};
+  (ret.items||[]).forEach(item=>{
+    const qty = parseInt(item.actualReturnQty)||0;
+    if(qty>0) qtyByProduct[item.productId]=(qtyByProduct[item.productId]||0)+qty;
+  });
+  if(Object.keys(qtyByProduct).length===0 && relatedLogs.length){
+    relatedLogs.forEach(l=>{ qtyByProduct[l.productId]=(qtyByProduct[l.productId]||0)+(parseInt(l.qty)||0); });
+  }
+  const insufficient = Object.entries(qtyByProduct).map(([pid,qty])=>{
+    const p=products.find(x=>x.id===pid);
+    return p && (p.stock||0)<qty ? {p, qty, stock:p.stock||0} : null;
+  }).filter(Boolean);
+  if(insufficient.length){
+    modal(`<h2>無法刪除回倉單</h2>
+      <p style="font-size:13px;color:#666;line-height:1.7;margin-bottom:12px">刪除回倉單需要把先前加回大倉的數量扣回，但以下商品目前大倉庫存不足，若扣回會變成負數。</p>
+      <div class="tbl-wrap"><table><thead><tr><th>SKU</th><th>商品</th><th>目前庫存</th><th>需扣回</th><th>短少</th></tr></thead><tbody>
+        ${insufficient.map(x=>`<tr><td>${esc(x.p.sku||'')}</td><td>${esc(x.p.name||'')}</td><td>${x.stock}</td><td>${x.qty}</td><td class="warning-text">${x.qty-x.stock}</td></tr>`).join('')}
+      </tbody></table></div>
+      <div class="form-actions"><button class="btn" onclick="closeModal()">關閉</button></div>`);
+    return;
+  }
+  const restoreSummary = Object.entries(qtyByProduct).map(([pid,qty])=>{
+    const p=products.find(x=>x.id===pid);
+    return p ? `「${p.name}」庫存扣回 ${qty}` : `已刪除商品 ${pid} 無法扣回庫存`;
+  }).join('\n');
+  const message = `確定刪除撤場回倉單「${no}」？\n這會同步刪除 ${relatedLogs.length} 筆回倉明細，並撤銷先前加回大倉的庫存：\n${restoreSummary || '此回倉單沒有可扣回的庫存項目。'}\n\n此操作未來會限制為管理員權限。`;
+  if(!requireTypedConfirmation(message, no)) return;
+  try{
+    await runTransaction(db, async transaction=>{
+      const productSnaps = {};
+      for(const [pid,qty] of Object.entries(qtyByProduct)){
+        const pRef = doc(db,'products',pid);
+        const snap = await transaction.get(pRef);
+        if(snap.exists()){
+          const latest = snap.data();
+          if((latest.stock||0)<qty) throw new Error(`${latest.name||pid} 目前庫存不足，無法刪除回倉單`);
+          productSnaps[pid] = {ref:pRef, data:latest, qty};
+        }
+      }
+      for(const item of Object.values(productSnaps)){
+        transaction.update(item.ref,{stock:(item.data.stock||0)-item.qty});
+      }
+      for(const l of relatedLogs){ transaction.delete(doc(db,'logs',l.id)); }
+      transaction.delete(doc(db,'returns',id));
+    });
+    await addAuditLog('deleteReturn', `刪除撤場回倉單 ${no}`, `刪除 ${relatedLogs.length} 筆回倉明細；扣回大倉庫存總數 ${Object.values(qtyByProduct).reduce((a,b)=>a+b,0)}。`, 'return', id, {returnNo:no,totalQty:Object.values(qtyByProduct).reduce((a,b)=>a+b,0),location:ret.location||''});
+    closeModal();
+    toast('已刪除回倉單並同步扣回大倉庫存');
   }catch(e){toast('錯誤：'+e.message);}
 };
 
@@ -1239,7 +1328,7 @@ window.delShipment = async id=>{
 window.delLog = async id=>{
   const l=logs.find(x=>x.id===id); if(!l) return;
   if(l.type==='out' && l.shipmentId){ toast('此出貨明細屬於出貨單，請刪除整張出貨單以保持庫存與現場出貨資料一致'); return; }
-  if(l.type==='return' && l.returnId){ toast('此回倉明細屬於回倉單，暫不支援單筆刪除，避免庫存不一致'); return; }
+  if(l.type==='return' && l.returnId){ toast('此回倉明細屬於回倉單，請刪除整張回倉單以保持庫存一致'); return; }
   const p=products.find(x=>x.id===l.productId);
   const productName = p ? p.name : '已刪除商品';
   const label = logTypeLabel(l.type).text;
