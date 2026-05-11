@@ -187,7 +187,7 @@ tr:hover td{background:#fafaf8}
     <button class="active" data-tab="dashboard" onclick="switchTab('dashboard')">📊 總覽</button>
     <button data-tab="products" onclick="switchTab('products')">📦 商品管理</button>
     <button data-tab="in" onclick="switchTab('in')">🚚 進貨</button>
-    <button data-tab="out" onclick="switchTab('out')">📤 出貨</button>
+    <button data-tab="out" onclick="switchTab('out')">📤 調貨</button>
     <button data-tab="logs" onclick="switchTab('logs')">📋 記錄</button>
     <button data-tab="field" onclick="switchTab('field')">📍 現場庫存 / 補貨</button>
     <button data-tab="audit" onclick="switchTab('audit')">🕘 操作紀錄</button>
@@ -291,7 +291,7 @@ function renderNav(){
     ['dashboard','📊 總覽',true],
     ['products','📦 商品管理',true],
     ['in','🚚 進貨',can('canCreateInbound')],
-    ['out','📤 出貨',can('canCreateShipment')],
+    ['out','📤 調貨',can('canCreateShipment')],
     ['logs','📋 記錄',true],
     ['field','📍 現場庫存 / 補貨',true],
     ['audit','🕘 操作紀錄',canSeeAuditTab()]
@@ -461,11 +461,11 @@ function renderDashboard(){
       <div class="stat-card"><div class="label">總庫存</div><div class="value">${totalStock.toLocaleString()}</div></div>
       <div class="stat-card danger"><div class="label">低庫存警示</div><div class="value">${low.length}</div></div>
       <div class="stat-card blue"><div class="label">今日進貨</div><div class="value">${totalIn}</div></div>
-      <div class="stat-card amber"><div class="label">今日出貨</div><div class="value">${totalOut}</div></div>
+      <div class="stat-card amber"><div class="label">今日調貨</div><div class="value">${totalOut}</div></div>
     </div>
     ${alertHtml}
     <div class="card">
-      <div class="card-title">📋 最近進出貨記錄</div>
+      <div class="card-title">📋 最近進調貨記錄</div>
       <div class="tbl-wrap tbl-scroll">
         <table><thead><tr><th>日期</th><th>商品</th><th>類型</th><th>數量</th><th>備註</th><th>操作</th></tr></thead>
         <tbody>${rows}</tbody></table>
@@ -776,7 +776,7 @@ function renderIn(){
 }
 
 function renderOut(){
-  if(!can('canCreateShipment')) return '<div class="card"><div class="card-title">📤 出貨</div><p style="color:#666">你目前是 '+roleName()+'，沒有建立出貨單權限。</p></div>';
+  if(!can('canCreateShipment')) return '<div class="card"><div class="card-title">📤 調貨</div><p style="color:#666">你目前是 '+roleName()+'，沒有建立調貨單權限。</p></div>';
   const active = products.filter(p=>!p.deleted);
   const ips = [...new Set(active.map(p=>p.ipName).filter(Boolean))].sort();
   const outProducts = outIpFilter ? active.filter(p=>(p.ipName||'')===outIpFilter) : active;
@@ -786,7 +786,7 @@ function renderOut(){
   const recent = logs.filter(l=>l.type==='out').slice(0,20);
   return `
     <div class="card" style="max-width:640px">
-      <div class="card-title">📤 新增出貨</div>
+      <div class="card-title">📤 新增調貨</div>
       <div class="form-row">
         <label>先篩選 IP / 作品</label>
         <select id="out-ip" onchange="setOutIpFilter(this.value)">
@@ -795,21 +795,21 @@ function renderOut(){
         </select>
       </div>
       <div class="form-row"><label>商品</label><select id="out-p">${opts}</select></div>
-      <div class="form-row"><label>出貨數量</label><input type="number" id="out-q" min="1" value="1"></div>
-      <div class="form-row"><label>出貨目的地 / 展場 *</label><input type="text" id="out-dest" list="field-location-dl" value="${esc(outDestination)}" oninput="setOutDestination(this.value)" placeholder="例：台北快閃店"><datalist id="field-location-dl">${knownLocations().map(loc=>`<option>${esc(loc)}</option>`).join('')}</datalist></div>
+      <div class="form-row"><label>調貨數量</label><input type="number" id="out-q" min="1" value="1"></div>
+      <div class="form-row"><label>調貨目的地 / 展場 *</label><input type="text" id="out-dest" list="field-location-dl" value="${esc(outDestination)}" oninput="setOutDestination(this.value)" placeholder="例：台北快閃店"><datalist id="field-location-dl">${knownLocations().map(loc=>`<option>${esc(loc)}</option>`).join('')}</datalist></div>
       <div class="form-row"><label>活動 / 收貨方 / 備註</label><input type="text" id="out-n" placeholder="例：台北場快閃"></div>
       <div class="form-row"><label>日期</label><input type="date" id="out-d" value="${today()}"></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn primary" onclick="addOutCart()">＋ 加入出貨清單</button>
-        <button class="btn success" onclick="confirmOutCartAndPrint()">✔ 確認出貨 / 建立出貨單</button>
+        <button class="btn primary" onclick="addOutCart()">＋ 加入調貨清單</button>
+        <button class="btn success" onclick="confirmOutCartAndPrint()">✔ 確認調貨 / 建立調貨單</button>
       </div>
     </div>
     <div class="card">
-      <div class="card-title">🧾 目前出貨清單 <span class="cart-summary">共 ${shippingCart.length} 項</span></div>
+      <div class="card-title">🧾 目前調貨清單 <span class="cart-summary">共 ${shippingCart.length} 項</span></div>
       ${shippingCartTable()}
     </div>
     <div class="card" style="margin-top:12px">
-      <div class="card-title">最近出貨記錄</div>
+      <div class="card-title">最近調貨記錄</div>
       <div class="tbl-wrap tbl-scroll">${miniLogTable(recent)}</div>
     </div>`;
 }
@@ -825,7 +825,7 @@ function renderLogs(){
   if(dateF) shipmentList=shipmentList.filter(s=>s.date===dateF);
 
   const shipmentRows = shipmentList.length===0
-    ? `<tr><td colspan="8" class="empty">尚無出貨單</td></tr>`
+    ? `<tr><td colspan="8" class="empty">尚無調貨單</td></tr>`
     : shipmentList.map(s=>`<tr>
         <td>${esc(s.date||'')}</td>
         <td><strong>${esc(s.shipmentNo||s.id)}</strong></td>
@@ -853,7 +853,7 @@ function renderLogs(){
           <td><span class="tag ${logTypeLabel(l.type).cls}">${logTypeLabel(l.type).text}</span></td>
           <td>${l.qty}</td>
           <td style="color:#888">${esc(l.note||'—')}</td>
-          <td>${l.shipmentId?`<button class="btn sm" onclick="viewShipment('${l.shipmentId}')">出貨單</button>`:'—'}</td>
+          <td>${l.shipmentId?`<button class="btn sm" onclick="viewShipment('${l.shipmentId}')">調貨單</button>`:'—'}</td>
           <td>${can('canDeleteLog')?`<button class="btn sm danger" onclick="delLog('${l.id}')">🗑️ 刪除</button>`:'—'}</td>
         </tr>`;
       }).join('');
@@ -863,25 +863,25 @@ function renderLogs(){
       <select id="lf-type" onchange="renderContent()">
         <option value="">全部類型</option>
         <option value="in" ${typeF==='in'?'selected':''}>進貨</option>
-        <option value="out" ${typeF==='out'?'selected':''}>出貨</option>
+        <option value="out" ${typeF==='out'?'selected':''}>調貨</option>
         <option value="return" ${typeF==='return'?'selected':''}>撤場回倉</option>
       </select>
       <input type="date" id="lf-date" value="${dateF}" onchange="renderContent()">
       <button class="btn" onclick="exportLogsCSV()">⬇ 匯出記錄 CSV</button>
-      <button class="btn" onclick="exportShipmentsCSV()">⬇ 匯出出貨單 CSV</button>
-      <button class="btn success" onclick="printFiltered()">🖨️ 列印篩選出貨記錄</button>
+      <button class="btn" onclick="exportShipmentsCSV()">⬇ 匯出調貨單 CSV</button>
+      <button class="btn success" onclick="printFiltered()">🖨️ 列印篩選調貨記錄</button>
     </div>
     <div class="card">
-      <div class="card-title">🧾 出貨單紀錄</div>
+      <div class="card-title">🧾 調貨單紀錄</div>
       <div class="tbl-wrap shipment-table-scroll">
-        <table><thead><tr><th>日期</th><th>出貨單編號</th><th>品項數</th><th>總數量</th><th>目的地</th><th>備註</th><th>建立者</th><th>操作</th></tr></thead>
+        <table><thead><tr><th>日期</th><th>調貨單編號</th><th>品項數</th><th>總數量</th><th>目的地</th><th>備註</th><th>建立者</th><th>操作</th></tr></thead>
         <tbody>${shipmentRows}</tbody></table>
       </div>
     </div>
     <div class="card">
-      <div class="card-title">📋 進出貨明細</div>
+      <div class="card-title">📋 進調貨明細</div>
       <div class="tbl-wrap product-table-scroll">
-        <table><thead><tr><th>日期</th><th>編號</th><th>商品</th><th>類型</th><th>數量</th><th>備註</th><th>出貨單</th><th>操作</th></tr></thead>
+        <table><thead><tr><th>日期</th><th>編號</th><th>商品</th><th>類型</th><th>數量</th><th>備註</th><th>調貨單</th><th>操作</th></tr></thead>
         <tbody>${rows}</tbody></table>
       </div>
     </div>`;
@@ -896,7 +896,7 @@ function miniLogTable(list){
 }
 
 function shippingCartTable(){
-  if(shippingCart.length===0) return '<p style="font-size:13px;color:#aaa;padding:4px 0">尚未加入任何出貨商品</p>';
+  if(shippingCart.length===0) return '<p style="font-size:13px;color:#aaa;padding:4px 0">尚未加入任何調貨商品</p>';
   return `<div class="tbl-wrap tbl-scroll">
     <table><thead><tr><th>日期</th><th>SKU</th><th>商品</th><th>IP / 作品</th><th>數量</th><th>備註 / 活動</th><th>操作</th></tr></thead>
     <tbody>${shippingCart.map((item,i)=>{
@@ -918,7 +918,7 @@ function shippingCartTable(){
 
 function logTypeLabel(type){
   if(type==='in') return {text:'進貨', cls:'tag-in'};
-  if(type==='out') return {text:'出貨', cls:'tag-out'};
+  if(type==='out') return {text:'調貨', cls:'tag-out'};
   if(type==='return') return {text:'撤場回倉', cls:'tag-in'};
   return {text:type||'紀錄', cls:'tag-gray'};
 }
@@ -953,7 +953,7 @@ function renderAuditLogs(){
   </div>
   <div class="card">
     <div class="card-title">${title}</div>
-    <div class="help-text">記錄高風險操作與重要異動，例如出貨、刪除、POS 匯入、撤場回倉與安全值修改。最多顯示最近 200 筆。</div>
+    <div class="help-text">記錄高風險操作與重要異動，例如調貨、刪除、POS 匯入、撤場回倉與安全值修改。最多顯示最近 200 筆。</div>
     <div class="tbl-wrap product-table-scroll"><table><thead><tr><th>時間</th><th>操作</th><th>內容</th><th>操作人</th><th>關聯</th></tr></thead><tbody>${rows}</tbody></table></div>
   </div>`;
 }
@@ -1018,7 +1018,7 @@ function renderFieldStock(){
       <div class="card-title">📍 現場庫存推估 / 補貨建議</div>
       <div class="help-text">可直接在「安全值」與「目標值」欄位輸入數字並離開欄位儲存；當推估現場庫存低於安全值時，系統會建議補到目標值的差額。</div>
       <div class="tbl-wrap pos-table-scroll">
-        <table><thead><tr><th>展場 / 門市</th><th>SKU</th><th>商品</th><th>IP / 作品</th><th>已出貨到現場</th><th>POS 已售</th><th>已回倉</th><th>推估現場庫存</th><th>安全值</th><th>目標值</th><th>建議補貨</th></tr></thead><tbody>${rows}</tbody></table>
+        <table><thead><tr><th>展場 / 門市</th><th>SKU</th><th>商品</th><th>IP / 作品</th><th>已調貨到現場</th><th>POS 已售</th><th>已回倉</th><th>推估現場庫存</th><th>安全值</th><th>目標值</th><th>建議補貨</th></tr></thead><tbody>${rows}</tbody></table>
       </div>
     </div>
     <div class="card">
@@ -1084,7 +1084,7 @@ function fieldStockData(locationFilter='', ipFilter=''){
 
 function fieldStockRows(locationFilter='', ipFilter=''){
   const data = fieldStockData(locationFilter, ipFilter);
-  if(data.length===0) return `<tr><td colspan="11" class="empty">目前尚無可推估的現場庫存。請先建立有「目的地 / 展場」的出貨單，或匯入 POS 銷售 CSV。</td></tr>`;
+  if(data.length===0) return `<tr><td colspan="11" class="empty">目前尚無可推估的現場庫存。請先建立有「目的地 / 展場」的調貨單，或匯入 POS 銷售 CSV。</td></tr>`;
   return data.map(r=>`<tr>
     <td>${esc(r.location)}</td>
     <td style="color:#888;font-size:12px">${esc(r.product.sku||'')}</td>
@@ -1462,7 +1462,7 @@ window.delPosSale = async id=>{
 
 window.exportFieldStockCSV = ()=>{
   const data = fieldStockData(fieldLocationFilter, fieldIpFilter);
-  const rows=[['展場/門市','SKU','商品名稱','IP/作品','已出貨到現場','POS已售','已回倉','推估現場庫存','安全庫存','目標庫存','建議補貨'],...data.map(r=>[r.location,r.product.sku||'',r.product.name||'',r.product.ipName||'',r.shipped,r.sold,r.returned||0,r.estimated,r.safe,r.target,r.suggest])];
+  const rows=[['展場/門市','SKU','商品名稱','IP/作品','已調貨到現場','POS已售','已回倉','推估現場庫存','安全庫存','目標庫存','建議補貨'],...data.map(r=>[r.location,r.product.sku||'',r.product.name||'',r.product.ipName||'',r.shipped,r.sold,r.returned||0,r.estimated,r.safe,r.target,r.suggest])];
   dlCSV(rows,'現場庫存補貨建議.csv');
 };
 
@@ -1526,9 +1526,9 @@ window.saveProduct = async id=>{
 
 window.delProduct = async(id,name)=>{
   if(!requirePermission('canDeleteProduct','權限不足：只有管理員可以刪除商品')) return;
-  if(!confirm(`確定刪除「${name}」？進出貨記錄將保留。`)) return;
+  if(!confirm(`確定刪除「${name}」？進調貨記錄將保留。`)) return;
   await updateDoc(doc(db,'products',id),{deleted:true});
-  await addAuditLog('deleteProduct', `刪除商品 ${name}`, '商品已標記為刪除，進出貨記錄保留。', 'product', id);
+  await addAuditLog('deleteProduct', `刪除商品 ${name}`, '商品已標記為刪除，進調貨記錄保留。', 'product', id);
   toast('已刪除');
 };
 
@@ -1547,29 +1547,29 @@ window.submitIn = async()=>{
 };
 
 window.addOutCart = ()=>{
-  if(!requirePermission('canCreateShipment','權限不足：你無法建立出貨單')) return;
+  if(!requirePermission('canCreateShipment','權限不足：你無法建立調貨單')) return;
   const pid=g('out-p'), qty=parseInt(g('out-q'))||0, note=g('out-n'), date=g('out-d')||today();
   if(!pid||qty<=0){toast('請選擇商品並填入有效數量');return;}
   const p=products.find(x=>x.id===pid); if(!p) return;
   const cartQty = shippingCart.filter(i=>i.productId===pid).reduce((a,i)=>a+i.qty,0);
   if(p.stock < cartQty + qty){
-    toast(`⚠️ 出貨清單數量超過庫存！目前庫存：${p.stock}，清單已加入：${cartQty}`);
+    toast(`⚠️ 調貨</option清單數量超過庫存！目前庫存：${p.stock}，清單已加入：${cartQty}`);
     return;
   }
   shippingCart.push({productId:pid, qty, note, date});
   renderContent();
-  toast(`✅ 已加入出貨清單：${p.name} x ${qty}`);
+  toast(`✅ 已加入調貨清單：${p.name} x ${qty}`);
 };
 
 window.removeOutCart = index=>{
   shippingCart.splice(index,1);
   renderContent();
-  toast('已從出貨清單移除');
+  toast('已從調貨清單移除');
 };
 
 window.confirmOutCartAndPrint = async()=>{
-  if(!requirePermission('canCreateShipment','權限不足：你無法建立出貨單')) return;
-  if(shippingCart.length===0){toast('請先加入出貨清單');return;}
+  if(!requirePermission('canCreateShipment','權限不足：你無法建立調貨單')) return;
+  if(shippingCart.length===0){toast('請先加入調貨清單');return;}
   const qtyByProduct = {};
   for(const item of shippingCart){
     qtyByProduct[item.productId]=(qtyByProduct[item.productId]||0)+item.qty;
@@ -1581,12 +1581,12 @@ window.confirmOutCartAndPrint = async()=>{
     if((p.stock||0)<qty){ shortage.push({name:p.name, sku:p.sku||'', need:qty, stock:p.stock||0}); }
   }
   if(shortage.length){
-    toast('有商品庫存不足，無法確認出貨');
-    modal(`<h2>庫存不足，無法確認出貨</h2><div class="tbl-wrap"><table><thead><tr><th>SKU</th><th>商品</th><th>目前庫存</th><th>出貨需求</th><th>短少</th></tr></thead><tbody>${shortage.map(x=>`<tr><td>${esc(x.sku||'')}</td><td>${esc(x.name)}</td><td>${x.stock}</td><td>${x.need}</td><td class="warning-text">${x.need-x.stock}</td></tr>`).join('')}</tbody></table></div><div class="form-actions"><button class="btn" onclick="closeModal()">關閉</button></div>`);
+    toast('有商品庫存不足，無法確認調貨');
+    modal(`<h2>庫存不足，無法確認調貨</h2><div class="tbl-wrap"><table><thead><tr><th>SKU</th><th>商品</th><th>目前庫存</th><th>調貨需求</th><th>短少</th></tr></thead><tbody>${shortage.map(x=>`<tr><td>${esc(x.sku||'')}</td><td>${esc(x.name)}</td><td>${x.stock}</td><td>${x.need}</td><td class="warning-text">${x.need-x.stock}</td></tr>`).join('')}</tbody></table></div><div class="form-actions"><button class="btn" onclick="closeModal()">關閉</button></div>`);
     return;
   }
   const destination = (g('out-dest') || outDestination || '').trim();
-  if(!destination){toast('請填入出貨目的地 / 展場，方便後續推估現場庫存');return;}
+  if(!destination){toast('請填入調貨目的地 / 展場，方便後續推估現場庫存');return;}
   outDestination = destination;
   const cartSnapshot = shippingCart.map(i=>({...i}));
   const shipmentDate = cartSnapshot[0]?.date || today();
@@ -1604,7 +1604,7 @@ window.confirmOutCartAndPrint = async()=>{
       for(const [pid,qty] of Object.entries(qtyByProduct)){
         const pRef = doc(db,'products',pid);
         const snap = await transaction.get(pRef);
-        if(!snap.exists()) throw new Error('出貨清單中有商品已不存在，請移除後再試');
+        if(!snap.exists()) throw new Error('調貨清單中有商品已不存在，請移除後再試');
         const latest = snap.data();
         if((latest.stock||0)<qty) throw new Error(`${latest.name||pid} 庫存不足，目前庫存：${latest.stock||0}，清單需求：${qty}`);
         productSnaps[pid] = {ref:pRef, data:latest};
@@ -1622,18 +1622,18 @@ window.confirmOutCartAndPrint = async()=>{
         transaction.set(logRef,{productId:item.productId,type:'out',qty:item.qty,note:item.note,date:item.date,shipmentId:shipmentRef.id,shipmentNo,createdAt:serverTimestamp()});
       }
     });
-    await addAuditLog('createShipment', `建立出貨單 ${shipmentNo}`, `目的地：${destination}；品項 ${shipmentItems.length} 筆；總數量 ${shipmentItems.reduce((a,i)=>a+i.qty,0)}。`, 'shipment', shipmentRef.id, {shipmentNo,destination,totalQty:shipmentItems.reduce((a,i)=>a+i.qty,0)});
+    await addAuditLog('createShipment', `建立調貨單 ${shipmentNo}`, `目的地：${destination}；品項 ${shipmentItems.length} 筆；總數量 ${shipmentItems.reduce((a,i)=>a+i.qty,0)}。`, 'shipment', shipmentRef.id, {shipmentNo,destination,totalQty:shipmentItems.reduce((a,i)=>a+i.qty,0)});
     const shipmentForPrint = {id:shipmentRef.id, shipmentNo, date:shipmentDate, items:shipmentItems, totalQty:shipmentItems.reduce((a,i)=>a+i.qty,0), destination, note:combinedNote, createdByName:auth.currentUser?.displayName||''};
     shippingCart = [];
     renderContent();
     printShipmentObject(shipmentForPrint);
-    toast(`✅ 出貨完成，已建立出貨單 ${shipmentNo}`);
+    toast(`✅ 調貨完成，已建立調貨單 ${shipmentNo}`);
   }catch(e){toast('錯誤：'+e.message);}
 };
 
 window.delShipment = async id=>{
-  if(!requirePermission('canDeleteShipment','權限不足：只有管理員可以刪除出貨單')) return;
-  const shipment = shipments.find(s=>s.id===id); if(!shipment){toast('找不到出貨單');return;}
+  if(!requirePermission('canDeleteShipment','權限不足：只有管理員可以刪除調貨單')) return;
+  const shipment = shipments.find(s=>s.id===id); if(!shipment){toast('找不到調貨單');return;}
   const no = shipment.shipmentNo||shipment.id;
   const relatedLogs = logs.filter(l=>l.shipmentId===id && l.type==='out');
   const qtyByProduct = {};
@@ -1643,8 +1643,8 @@ window.delShipment = async id=>{
     return p ? `「${p.name}」庫存加回 ${qty}` : `已刪除商品 ${pid} 無法回補庫存`;
   }).join('\n');
   const message = relatedLogs.length>0
-    ? `確定刪除出貨單「${no}」？\n這會同步刪除 ${relatedLogs.length} 筆出貨明細，並回補庫存：\n${restoreSummary}`
-    : `確定刪除出貨單「${no}」？\n目前找不到對應的出貨明細，因此只會刪除出貨單紀錄。`;
+    ? `確定刪除調貨單「${no}」？\n這會同步刪除 ${relatedLogs.length} 筆調貨明細，並回補庫存：\n${restoreSummary}`
+    : `確定刪除調貨單「${no}」？\n目前找不到對應的調貨明細，因此只會刪除調貨單紀錄。`;
   if(!requireTypedConfirmation(message, no)) return;
   try{
     for(const [pid,qty] of Object.entries(qtyByProduct)){
@@ -1653,16 +1653,16 @@ window.delShipment = async id=>{
     }
     for(const l of relatedLogs){ await deleteDoc(doc(db,'logs',l.id)); }
     await deleteDoc(doc(db,'shipments',id));
-    await addAuditLog('deleteShipment', `刪除出貨單 ${no}`, `刪除 ${relatedLogs.length} 筆出貨明細；回補庫存總數 ${Object.values(qtyByProduct).reduce((a,b)=>a+b,0)}。`, 'shipment', id, {shipmentNo:no});
+    await addAuditLog('deleteShipment', `刪除調貨單 ${no}`, `刪除 ${relatedLogs.length} 筆調貨明細；回補庫存總數 ${Object.values(qtyByProduct).reduce((a,b)=>a+b,0)}。`, 'shipment', id, {shipmentNo:no});
     closeModal();
-    toast('已刪除出貨單並同步處理相關明細');
+    toast('已刪除調貨單並同步處理相關明細');
   }catch(e){toast('錯誤：'+e.message);}
 };
 
 window.delLog = async id=>{
-  if(!requirePermission('canDeleteLog','權限不足：只有管理員可以刪除進出貨紀錄')) return;
+  if(!requirePermission('canDeleteLog','權限不足：只有管理員可以刪除進調貨紀錄')) return;
   const l=logs.find(x=>x.id===id); if(!l) return;
-  if(l.type==='out' && l.shipmentId){ toast('此出貨明細屬於出貨單，請刪除整張出貨單以保持庫存與現場出貨資料一致'); return; }
+  if(l.type==='out' && l.shipmentId){ toast('此調貨明細屬於調貨單，請刪除整張調貨單以保持庫存與現場調貨資料一致'); return; }
   if(l.type==='return' && l.returnId){ toast('此回倉明細屬於回倉單，請刪除整張回倉單以保持庫存一致'); return; }
   const p=products.find(x=>x.id===l.productId);
   const productName = p ? p.name : '已刪除商品';
@@ -1686,12 +1686,12 @@ window.delLog = async id=>{
 // ── Print ──
 function printSlip(slipLogs){
   const outLogs = slipLogs.filter(l=>l.type==='out');
-  if(outLogs.length===0){toast('無出貨資料');return;}
+  if(outLogs.length===0){toast('無調貨資料');return;}
   const items = outLogs.map(l=>{
     const p=products.find(x=>x.id===l.productId);
     return {sku:p?.sku||'', name:p?.name||'已刪除', ipName:p?.ipName||'', category:p?.category||'', qty:l.qty, note:l.note||'', date:l.date};
   });
-  printShipmentObject({shipmentNo:outLogs[0].shipmentNo||'篩選出貨記錄', date:outLogs[0].date, items, totalQty:items.reduce((a,i)=>a+i.qty,0), createdByName:auth.currentUser?.displayName||''});
+  printShipmentObject({shipmentNo:outLogs[0].shipmentNo||'篩選調貨記錄', date:outLogs[0].date, items, totalQty:items.reduce((a,i)=>a+i.qty,0), createdByName:auth.currentUser?.displayName||''});
 }
 
 function makeShipmentNo(dateStr){
@@ -1711,10 +1711,10 @@ function shipmentHtml(shipment){
     <td>${esc(item.note||'')}</td>
   </tr>`).join('');
   return `
-    <h2>📦 出貨單</h2>
+    <h2>📦 調貨單</h2>
     <div class="meta">
-      出貨單編號：${esc(shipment.shipmentNo||shipment.id||'')}<br>
-      出貨日期：${esc(shipment.date||'')}<br>
+      調貨單編號：${esc(shipment.shipmentNo||shipment.id||'')}<br>
+      調貨日期：${esc(shipment.date||'')}<br>
       目的地 / 展場：${esc(shipment.destination||'—')}<br>
       總數量：${shipment.totalQty||0}<br>
       列印時間：${new Date().toLocaleString('zh-TW')}<br>
@@ -1725,14 +1725,14 @@ function shipmentHtml(shipment){
       <tbody>${rows}</tbody>
     </table>
     <div class="sign">
-      <div>出貨人員簽名</div>
+      <div>調貨人員簽名</div>
       <div>核對人員簽名</div>
       <div>收貨人員簽名</div>
     </div>`;
 }
 
 function fullShipmentDocument(shipment){
-  return `<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><title>${esc(shipment.shipmentNo||'出貨單')}</title>
+  return `<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><title>${esc(shipment.shipmentNo||'調貨單')}</title>
   <style>body{font-family:'Noto Sans TC',system-ui,sans-serif;padding:24px;font-size:13px;color:#1a1a1a}h2{font-size:20px;margin-bottom:4px}.meta{font-size:12px;color:#555;margin-bottom:20px;line-height:1.8}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ccc;padding:8px 12px;text-align:left}th{background:#f5f5f5}.sign{margin-top:48px;display:flex;gap:60px;font-size:12px;color:#555}.sign div{border-top:1px solid #aaa;padding-top:6px;min-width:160px}</style>
   </head><body>${shipmentHtml(shipment)}</body></html>`;
 }
@@ -1744,27 +1744,27 @@ function printShipmentObject(shipment){
 
 window.viewShipment = id=>{
   const shipment = shipments.find(s=>s.id===id);
-  if(!shipment){toast('找不到出貨單');return;}
-  modal(`<h2>出貨單 ${esc(shipment.shipmentNo||shipment.id)}</h2>
+  if(!shipment){toast('找不到調貨單');return;}
+  modal(`<h2>調貨單 ${esc(shipment.shipmentNo||shipment.id)}</h2>
     <div style="font-size:12px;color:#666;line-height:1.8;margin-bottom:12px">日期：${esc(shipment.date||'')}<br>目的地 / 展場：${esc(shipment.destination||'—')}<br>總數量：${shipment.totalQty||0}<br>建立者：${esc(shipment.createdByName||'—')}</div>
     <div class="tbl-wrap tbl-scroll"><table><thead><tr><th>SKU</th><th>商品</th><th>IP / 作品</th><th>分類</th><th>數量</th><th>備註</th></tr></thead><tbody>${(shipment.items||[]).map(item=>`<tr><td>${esc(item.sku||'')}</td><td>${esc(item.name||'')}</td><td>${esc(item.ipName||'')}</td><td>${esc(item.category||'')}</td><td>${item.qty||0}</td><td>${esc(item.note||'')}</td></tr>`).join('')}</tbody></table></div>
-    <div class="form-actions"><button class="btn" onclick="closeModal()">關閉</button><button class="btn" onclick="downloadShipment('${id}')">下載</button><button class="btn success" onclick="printShipment('${id}')">列印</button><button class="btn danger" onclick="delShipment('${id}')">刪除出貨單</button></div>`);
+    <div class="form-actions"><button class="btn" onclick="closeModal()">關閉</button><button class="btn" onclick="downloadShipment('${id}')">下載</button><button class="btn success" onclick="printShipment('${id}')">列印</button><button class="btn danger" onclick="delShipment('${id}')">刪除調貨單</button></div>`);
 };
 
 window.printShipment = id=>{
   const shipment = shipments.find(s=>s.id===id);
-  if(!shipment){toast('找不到出貨單');return;}
+  if(!shipment){toast('找不到調貨單');return;}
   printShipmentObject(shipment);
 };
 
 window.downloadShipment = id=>{
   const shipment = shipments.find(s=>s.id===id);
-  if(!shipment){toast('找不到出貨單');return;}
+  if(!shipment){toast('找不到調貨單');return;}
   const blob = new Blob([fullShipmentDocument(shipment)], {type:'text/html;charset=utf-8'});
   const url = URL.createObjectURL(blob);
   const a=document.createElement('a');
   a.href=url;
-  a.download=`${shipment.shipmentNo||'出貨單'}.html`;
+  a.download=`${shipment.shipmentNo||'調貨單'}.html`;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -1777,7 +1777,7 @@ window.printFiltered = ()=>{
   let list = [...logs];
   if(typeF) list=list.filter(l=>l.type===typeF); else list=list.filter(l=>l.type==='out');
   if(dateF) list=list.filter(l=>l.date===dateF);
-  if(list.length===0){toast('無出貨記錄可列印');return;}
+  if(list.length===0){toast('無調貨記錄可列印');return;}
   printSlip(list);
 };
 
@@ -1788,16 +1788,16 @@ window.exportCSV = ()=>{
   dlCSV(rows,'商品清單.csv');
 };
 window.exportLogsCSV = ()=>{
-  const rows=[['日期','編號','商品名稱','類型','數量','備註','出貨單ID'],...logs.map(l=>{
+  const rows=[['日期','編號','商品名稱','類型','數量','備註','調貨單ID'],...logs.map(l=>{
     const p=products.find(x=>x.id===l.productId);
     return [l.date,l.shipmentNo||l.id,p?p.name:'已刪除',logTypeLabel(l.type).text,l.qty,l.note||'',l.shipmentId||''];
   })];
-  dlCSV(rows,'進出貨記錄.csv');
+  dlCSV(rows,'進調貨記錄.csv');
 };
 
 window.exportShipmentsCSV = ()=>{
-  const rows=[['日期','出貨單編號','目的地','品項數','總數量','備註','建立者'],...shipments.map(s=>[s.date||'',s.shipmentNo||s.id,s.destination||'',s.items?.length||0,s.totalQty||0,s.note||'',s.createdByName||''])];
-  dlCSV(rows,'出貨單紀錄.csv');
+  const rows=[['日期','調貨單編號','目的地','品項數','總數量','備註','建立者'],...shipments.map(s=>[s.date||'',s.shipmentNo||s.id,s.destination||'',s.items?.length||0,s.totalQty||0,s.note||'',s.createdByName||''])];
+  dlCSV(rows,'調貨單紀錄.csv');
 };
 
 function dlCSV(rows,filename){
