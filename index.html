@@ -320,7 +320,7 @@ function showUnauthorized(message){
   products=[]; logs=[]; shipments=[]; posSales=[]; returns=[]; auditLogs=[]; shippingCart=[]; productBatchEditMode=false; productBatchDrafts={}; productBatchNewRows=[];
   currentUserRole = null; currentUserProfile = null;
   document.getElementById('main-nav').innerHTML='';
-  document.getElementById('main-content').innerHTML = `<div class="card"><div class="card-title">⛔ 無法進入系統</div><p style="line-height:1.8;color:#666">${esc(message)}</p><div class="form-actions"><button class="btn" onclick="signOut()">登出</button></div></div>`;
+  document.getElementById('main-content').innerHTML = `<div class="card"><div class="card-title">⛔ 無法進入系統（吼唷~~晏羽不認識你啦）</div><p style="line-height:1.8;color:#666">${esc(message)}</p><div class="form-actions"><button class="btn" onclick="signOut()">登出</button></div></div>`;
   const roleEl=document.getElementById('user-role'); if(roleEl){ roleEl.textContent='未授權'; roleEl.style.display=''; }
 }
 
